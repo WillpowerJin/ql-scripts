@@ -21,14 +21,6 @@ api:
   # 文章之间的冷却（前端 clickCooldown=8）
   click_cooldown: 8
   jitter: 1.5
-  # 海外 VPS 无代理时：用国内 DoH 解析域名（默认 true）
-  doh_enable: true
-  # doh_urls:
-  #   - "https://dns.alidns.com/resolve"
-  #   - "https://doh.pub/dns-query"
-  # 仍失败时可写死 IP（在国内机器 dig 后填入）
-  # hosts:
-  #   xmt.taizhou.com.cn: "111.3.157.195"
 
 lottery:
   enable: true
