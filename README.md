@@ -12,11 +12,11 @@
 
 ## 青龙订阅
 
-将下方 `OWNER/REPO` 换成你的仓库地址后，在青龙「订阅管理」添加，或 SSH 执行：
+在青龙「订阅管理」添加，或 SSH 执行：
 
 ```bash
 # 只拉取 .py 脚本；黑名单排除文档与示例配置
-ql repo https://github.com/OWNER/REPO.git "checkin" "README|config|example|requirements|\.md|\.yaml|\.yml|\.txt" "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "checkin" "README|config|example|requirements|\.md|\.yaml|\.yml|\.txt" "" "main" "py"
 ```
 
 说明：
@@ -43,8 +43,8 @@ ql repo https://github.com/OWNER/REPO.git "checkin" "README|config|example|requi
 ## 本地开发
 
 ```bash
-git clone https://github.com/OWNER/REPO.git
-cd REPO/hifiti
+git clone https://github.com/WillpowerJin/ql-scripts.git
+cd ql-scripts/hifiti
 pip install -r requirements.txt
 # 配置见 hifiti/README.md
 python checkin.py

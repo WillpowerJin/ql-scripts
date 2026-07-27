@@ -29,8 +29,7 @@
 在仓库根目录 [README](../README.md) 有通用订阅命令。若只拉本脚本，可用：
 
 ```bash
-# 将 OWNER/REPO 换成你的仓库
-ql repo https://github.com/OWNER/REPO.git "checkin" "README|config|example|requirements|\.md|\.yaml|\.yml|\.txt" "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "checkin" "README|config|example|requirements|\.md|\.yaml|\.yml|\.txt" "" "main" "py"
 ```
 
 订阅成功后应只出现 `checkin.py` 相关定时任务，而不是一堆 md/yaml。
