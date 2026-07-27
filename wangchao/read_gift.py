@@ -43,6 +43,7 @@ import json
 import logging
 import os
 import random
+import socket
 import string
 import sys
 import time
@@ -120,8 +121,28 @@ DEFAULT_UA_APP = (
 )
 DEFAULT_BARK_SERVER = "https://api.day.app"
 
+# 海外 VPS 系统 DNS 常解析不了国内权威域名；优先用国内 DoH
+DEFAULT_DOH_URLS = (
+    "https://dns.alidns.com/resolve",  # 阿里
+    "https://doh.pub/dns-query",  # 腾讯
+    "https://dns.google/resolve",
+)
+# 脚本关注的域名（启动时预解析）
+KNOWN_HOSTS = (
+    "xmt.taizhou.com.cn",
+    "vapp.taizhou.com.cn",
+    "passport.tmuyun.com",
+    "srv-app.taizhou.com.cn",
+    "maidian.taizhou.com.cn",
+)
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 logger = logging.getLogger("wangchao")
+
+# hostname -> ipv4，供 getaddrinfo 回退
+_DNS_CACHE: Dict[str, str] = {}
+_ORIG_GETADDRINFO = socket.getaddrinfo
+_DNS_PATCHED = False
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +206,11 @@ class AppConfig:
     click_cooldown: float = 8.0
     jitter: float = 1.5
     log_level: str = "INFO"
+    # 海外机器 DNS 回退（DoH / 静态 hosts），不需要代理
+    doh_enable: bool = True
+    doh_urls: List[str] = field(default_factory=lambda: list(DEFAULT_DOH_URLS))
+    # 手动 hosts：{"xmt.taizhou.com.cn": "1.2.3.4"}
+    hosts: Dict[str, str] = field(default_factory=dict)
 
 
 def _env(name: str, default: str = "") -> str:
@@ -336,6 +362,35 @@ def load_config(path: Optional[Path] = None) -> AppConfig:
         webhook_url=env_notify.webhook_url or str(n.get("webhook_url") or ""),
     )
 
+    # DoH：默认开启（海外 VPS 友好）；WANGCHAO_DOH=0 可关
+    doh_env = _env("WANGCHAO_DOH")
+    if doh_env in ("0", "false", "False", "off"):
+        doh_enable = False
+    elif doh_env in ("1", "true", "True", "on"):
+        doh_enable = True
+    else:
+        doh_enable = bool(api.get("doh_enable", True))
+
+    doh_urls = list(DEFAULT_DOH_URLS)
+    if api.get("doh_urls"):
+        doh_urls = [str(u) for u in api["doh_urls"]]
+    if _env("WANGCHAO_DOH_URLS"):
+        doh_urls = [u.strip() for u in _env("WANGCHAO_DOH_URLS").split(",") if u.strip()]
+
+    # 静态 hosts：yaml api.hosts 或
+    # WANGCHAO_HOSTS=xmt.taizhou.com.cn:1.2.3.4,vapp.taizhou.com.cn:5.6.7.8
+    hosts: Dict[str, str] = {}
+    if isinstance(api.get("hosts"), dict):
+        hosts.update({str(k): str(v) for k, v in api["hosts"].items()})
+    raw_hosts = _env("WANGCHAO_HOSTS")
+    if raw_hosts:
+        for part in raw_hosts.split(","):
+            part = part.strip()
+            if not part or ":" not in part:
+                continue
+            host, ip = part.rsplit(":", 1)
+            hosts[host.strip()] = ip.strip()
+
     return AppConfig(
         accounts=accounts,
         notify=notify,
@@ -355,6 +410,9 @@ def load_config(path: Optional[Path] = None) -> AppConfig:
         click_cooldown=float(api.get("click_cooldown") or 8),
         jitter=float(api.get("jitter") or 1.5),
         log_level=str(_env("WANGCHAO_LOG_LEVEL") or log.get("level") or "INFO"),
+        doh_enable=doh_enable,
+        doh_urls=doh_urls,
+        hosts=hosts,
     )
 
 
@@ -364,6 +422,127 @@ def setup_logging(level: str) -> None:
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
+
+# ---------------------------------------------------------------------------
+# DNS：海外 VPS 系统 DNS 失败时用 DoH / 静态 hosts 回退（无需代理）
+# ---------------------------------------------------------------------------
+
+
+def _is_ipv4(s: str) -> bool:
+    parts = s.split(".")
+    if len(parts) != 4:
+        return False
+    try:
+        return all(0 <= int(p) <= 255 for p in parts)
+    except ValueError:
+        return False
+
+
+def doh_resolve(hostname: str, doh_urls: List[str], timeout: float = 8.0) -> Optional[str]:
+    """通过 DNS-over-HTTPS 解析 A 记录，返回第一个 IPv4。"""
+    for base in doh_urls:
+        try:
+            # 阿里/Google: ?name=&type=A ；部分实现用 dns-query
+            if "dns-query" in base and "name=" not in base:
+                url = f"{base}?name={hostname}&type=A"
+            else:
+                sep = "&" if "?" in base else "?"
+                url = f"{base}{sep}name={hostname}&type=A"
+            r = requests.get(
+                url,
+                headers={"Accept": "application/dns-json"},
+                timeout=timeout,
+            )
+            if r.status_code != 200:
+                continue
+            data = r.json()
+            for ans in data.get("Answer") or []:
+                if ans.get("type") == 1 and _is_ipv4(str(ans.get("data") or "")):
+                    ip = str(ans["data"])
+                    logger.info("DoH 解析 %s -> %s (%s)", hostname, ip, base)
+                    return ip
+        except Exception as e:
+            logger.debug("DoH %s 失败: %s", base, e)
+    return None
+
+
+# install_dns_fallback 写入，供 getaddrinfo 运行时 DoH
+_DOH_URLS_RUNTIME: List[str] = list(DEFAULT_DOH_URLS)
+_DOH_RUNTIME_ENABLE = True
+
+
+def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    """系统 DNS 失败时使用缓存 / 即时 DoH。"""
+    try:
+        return _ORIG_GETADDRINFO(host, port, family, type, proto, flags)
+    except socket.gaierror:
+        ip = _DNS_CACHE.get(host)
+        if not ip and _DOH_RUNTIME_ENABLE and isinstance(host, str) and host:
+            ip = doh_resolve(host, _DOH_URLS_RUNTIME)
+            if ip:
+                _DNS_CACHE[host] = ip
+        if not ip:
+            raise
+        logger.debug("getaddrinfo 回退 %s -> %s", host, ip)
+        return [
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                (ip, int(port) if port else 0),
+            )
+        ]
+
+
+def install_dns_fallback(cfg: AppConfig) -> None:
+    """
+    安装 DNS 回退：
+    1) 静态 hosts / 环境变量
+    2) DoH 预解析关键域名
+    3) patch getaddrinfo：系统解析失败时用缓存 / 即时 DoH
+    """
+    global _DNS_PATCHED, _DOH_URLS_RUNTIME, _DOH_RUNTIME_ENABLE
+
+    _DOH_URLS_RUNTIME = list(cfg.doh_urls or DEFAULT_DOH_URLS)
+    _DOH_RUNTIME_ENABLE = bool(cfg.doh_enable)
+
+    for h, ip in (cfg.hosts or {}).items():
+        if h and _is_ipv4(ip):
+            _DNS_CACHE[h] = ip
+            logger.info("静态 hosts %s -> %s", h, ip)
+
+    if cfg.doh_enable:
+        for host in KNOWN_HOSTS:
+            if host in _DNS_CACHE:
+                continue
+            # 系统能解析则跳过
+            try:
+                _ORIG_GETADDRINFO(host, 443, type=socket.SOCK_STREAM)
+                continue
+            except socket.gaierror:
+                pass
+            ip = doh_resolve(host, _DOH_URLS_RUNTIME)
+            if ip:
+                _DNS_CACHE[host] = ip
+
+    if not _DNS_PATCHED and (cfg.doh_enable or _DNS_CACHE):
+        socket.getaddrinfo = _patched_getaddrinfo  # type: ignore[assignment]
+        _DNS_PATCHED = True
+        if _DNS_CACHE:
+            logger.info(
+                "已启用 DNS 回退，缓存 %s 个域名: %s",
+                len(_DNS_CACHE),
+                ", ".join(f"{k}={v}" for k, v in sorted(_DNS_CACHE.items())),
+            )
+        else:
+            logger.info("已启用 DNS 回退（运行时 DoH），预解析暂无结果")
+    elif cfg.doh_enable and not _DNS_CACHE:
+        logger.warning(
+            "DoH 预解析未得到 IP；若仍 Failed to resolve，"
+            "请配置 WANGCHAO_HOSTS 或换国内机器"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1117,11 +1296,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         cfg.do_lottery = False
 
     setup_logging(cfg.log_level)
+    # 海外 VPS：系统 DNS 常解析不了 xmt 等域名，启动时 DoH/hosts 回退
+    try:
+        install_dns_fallback(cfg)
+    except Exception as e:
+        logger.warning("DNS 回退初始化异常（将继续用系统 DNS）: %s", e)
+
     logger.info(
-        "望潮阅读有礼 | 账号=%s dry_run=%s lottery=%s",
+        "望潮阅读有礼 | 账号=%s dry_run=%s lottery=%s doh=%s",
         len(cfg.accounts),
         args.dry_run,
         cfg.do_lottery and not args.dry_run,
+        cfg.doh_enable,
     )
 
     results = []

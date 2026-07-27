@@ -106,7 +106,21 @@ BARK_GROUP=望潮阅读有礼
 ```text
 WANGCHAO_LOTTERY=0           # 关闭抽奖
 WANGCHAO_NOTIFY_DRY_RUN=1    # dry-run 时也推送（默认 dry-run 不推）
+WANGCHAO_DOH=1               # 海外 DNS 回退（默认开）；0 关闭
+# 系统 DNS/DoH 都失败时，手动指定 IP（国内机器 dig 后填写）：
+# WANGCHAO_HOSTS=xmt.taizhou.com.cn:111.3.157.195,vapp.taizhou.com.cn:x.x.x.x
 ```
+
+### 美国 / 海外 VPS（Docker 青龙、无代理）
+
+脚本默认启用 **DoH 回退**（优先阿里/腾讯 DNS over HTTPS）：  
+系统解析 `xmt.taizhou.com.cn` 失败时，自动用 DoH 拿 IP 再直连，**不需要在 VPS 上装代理**。
+
+若仍 `Failed to resolve` 或连接超时：
+
+1. 青龙订阅拉最新脚本后再跑  
+2. 在**国内网络**执行 `dig +short xmt.taizhou.com.cn A`，把 IP 写入环境变量 `WANGCHAO_HOSTS`  
+3. 长期仍不稳定 → 换国内机器跑此任务（最稳）
 
 ### 4. 定时任务
 
@@ -141,6 +155,7 @@ accounts:
 | 请重新打开 APP 参与抽奖 | 旧接口文案；请使用最新 `read_gift.py`（`saveUpdate`） |
 | 抽奖没有次数 | 当日未满 12 篇 |
 | 跑完没有 Bark | 配置 `BARK_URL` 或 `BARK_KEY`（可与 hifiti 相同） |
+| `Failed to resolve xmt...` / 443 | 海外 DNS 问题；更新脚本用 DoH，或设 `WANGCHAO_HOSTS`，或换国内机 |
 
 ## 依赖
 
