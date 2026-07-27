@@ -451,6 +451,55 @@ class HiFiTiClient:
                 ", ".join(missing),
             )
 
+    def fetch_gold(self) -> Optional[str]:
+        """
+        从个人中心 my.htm 读取当前金币余额。
+        页面结构示例：
+          <span class="text-muted">金币：</span><em ...>302</em>
+        """
+        try:
+            resp = self.session.get(
+                f"{self.base}/my.htm",
+                headers={
+                    "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+                    "Referer": f"{self.base}/",
+                },
+                timeout=self.cfg.timeout,
+            )
+            html = resp.text
+            if resp.status_code != 200 or "请登录" in html:
+                logger.warning("[%s] 获取金币失败：页面异常或未登录", self.account.name)
+                return None
+
+            patterns = [
+                r"金币：</span>\s*<em[^>]*>([^<]+)</em>",
+                r"金币[：:]\s*</span>\s*<em[^>]*>([^<]+)</em>",
+                r'金币</span></div><input[^>]*value="(\d+)"',
+                r'value="(\d+)"[^>]*>\s*.{0,40}金币',
+            ]
+            for pat in patterns:
+                m = re.search(pat, html, re.I | re.S)
+                if m:
+                    gold = m.group(1).strip()
+                    if gold:
+                        logger.info("[%s] 当前金币: %s", self.account.name, gold)
+                        return gold
+
+            logger.warning("[%s] 个人中心未解析到金币字段", self.account.name)
+            return None
+        except Exception as e:
+            logger.warning("[%s] 获取金币异常: %s", self.account.name, e)
+            return None
+
+    def _attach_gold(self, result: dict[str, Any]) -> dict[str, Any]:
+        """签到成功后附带金币余额，便于日志 / 通知展示。"""
+        if not result.get("ok"):
+            return result
+        gold = self.fetch_gold()
+        if gold is not None:
+            result["gold"] = gold
+        return result
+
     def sign(self) -> dict[str, Any]:
         resp = self.session.post(
             f"{self.base}/sg_sign.htm",
@@ -568,7 +617,7 @@ class HiFiTiClient:
             result = self._sign_with_retries()
             if result.get("ok"):
                 result["via"] = "cookie"
-                return result
+                return self._attach_gold(result)
 
             if result.get("error") == "auth" and acc.has_password():
                 logger.warning(
@@ -587,6 +636,7 @@ class HiFiTiClient:
                 result["via"] = "cookie→password"
                 if result.get("ok"):
                     logger.info("[%s] 密码重登后签到成功", acc.name)
+                    return self._attach_gold(result)
                 return result
 
             result.setdefault("via", "cookie")
@@ -607,6 +657,8 @@ class HiFiTiClient:
                 }
             result = self._sign_with_retries()
             result["via"] = "password"
+            if result.get("ok"):
+                return self._attach_gold(result)
             return result
 
         return {
@@ -795,10 +847,15 @@ def main() -> int:
 
         via = result.get("via") or ""
         via_tip = f" [{via}]" if via else ""
+        gold = result.get("gold")
+        gold_tip = f" | 金币: {gold}" if gold is not None else ""
 
         if result.get("ok"):
             tag = "已签过" if result.get("already") else "签到成功"
-            line = f"✅ [{acc.name}] {tag}{via_tip}: {result.get('message')}"
+            line = (
+                f"✅ [{acc.name}] {tag}{via_tip}: "
+                f"{result.get('message')}{gold_tip}"
+            )
             logger.info(line)
         else:
             any_fail = True

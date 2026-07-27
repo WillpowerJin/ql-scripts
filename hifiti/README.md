@@ -146,6 +146,7 @@ python checkin.py
 | `[cookie→password]` | Cookie 失效后，密码重登再签成功 |
 | `[password]` | 仅密码登录签到 |
 | `[cookie→login_failed]` | Cookie 挂了，密码登录也失败 |
+| `金币: N` | 签到成功后从个人中心读取的当前金币余额 |
 
 ## 接口说明
 
