@@ -106,6 +106,8 @@ BARK_GROUP=望潮阅读有礼
 ```text
 WANGCHAO_LOTTERY=0           # 关闭抽奖
 WANGCHAO_NOTIFY_DRY_RUN=1    # dry-run 时也推送（默认 dry-run 不推）
+WANGCHAO_ACCOUNT_INTERVAL=20 # 多账号间隔秒数（默认 20，防限流）
+WANGCHAO_INIT_RETRIES=5      # init 限流重试次数
 ```
 
 ### 4. 定时任务
@@ -141,6 +143,7 @@ accounts:
 | 请重新打开 APP 参与抽奖 | 旧接口文案；请使用最新 `read_gift.py`（`saveUpdate`） |
 | 抽奖没有次数 | 当日未满 12 篇 |
 | 跑完没有 Bark | 配置 `BARK_URL` 或 `BARK_KEY`（可与 hifiti 相同） |
+| 第二账号 init「操作过于频繁」 | 同 IP 连登限流；已自动间隔+重试，可加大 `WANGCHAO_ACCOUNT_INTERVAL` |
 
 ## 依赖
 

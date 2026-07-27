@@ -184,6 +184,10 @@ class AppConfig:
     timeout: int = 20
     click_cooldown: float = 8.0
     jitter: float = 1.5
+    # 多账号间隔（秒），避免 /api/account/init 触发「操作过于频繁」
+    account_interval: float = 20.0
+    # init 限流时最大重试次数
+    init_max_retries: int = 5
     log_level: str = "INFO"
 
 
@@ -313,6 +317,15 @@ def load_config(path: Optional[Path] = None) -> AppConfig:
     elif "enable" in lottery:
         do_lottery = bool(lottery.get("enable"))
 
+    account_interval = float(
+        _env("WANGCHAO_ACCOUNT_INTERVAL")
+        or api.get("account_interval")
+        or 20
+    )
+    init_max_retries = int(
+        _env("WANGCHAO_INIT_RETRIES") or api.get("init_max_retries") or 5
+    )
+
     # 环境变量优先于 yaml（方便青龙统一配 BARK_*）
     env_notify = load_notify_from_env()
     notify = NotifyConfig(
@@ -354,6 +367,8 @@ def load_config(path: Optional[Path] = None) -> AppConfig:
         timeout=int(api.get("timeout") or 20),
         click_cooldown=float(api.get("click_cooldown") or 8),
         jitter=float(api.get("jitter") or 1.5),
+        account_interval=account_interval,
+        init_max_retries=init_max_retries,
         log_level=str(_env("WANGCHAO_LOG_LEVEL") or log.get("level") or "INFO"),
     )
 
@@ -466,21 +481,53 @@ class WangChaoClient:
     # ---- 密码登录 ----
 
     def init_anonymous_session(self) -> str:
-        """POST /api/account/init → 匿名 session（登录换票前置）。"""
+        """
+        POST /api/account/init → 匿名 session（登录换票前置）。
+
+        多账号连打会被限流 code=10400「操作过于频繁」，自动退避重试。
+        """
         path = "/api/account/init"
         url = f"{self.cfg.vapp_url}{path}"
-        headers = self._vapp_headers(path, session_id="")
-        resp = self.session.post(url, headers=headers, data="", timeout=self.cfg.timeout)
-        data = self._parse(resp)
-        if str(data.get("code")) != "0":
+        max_retries = max(1, int(self.cfg.init_max_retries))
+        last_data: Dict[str, Any] = {}
+
+        for attempt in range(1, max_retries + 1):
+            headers = self._vapp_headers(path, session_id="")
+            resp = self.session.post(
+                url, headers=headers, data="", timeout=self.cfg.timeout
+            )
+            data = self._parse(resp)
+            last_data = data
+            code = str(data.get("code"))
+            if code == "0":
+                sess = (data.get("data") or {}).get("session") or {}
+                sid = str(sess.get("id") or "")
+                if not sid:
+                    raise RuntimeError(f"init 未返回 session.id: {data}")
+                self.vapp_session_id = sid
+                logger.info("[%s] 匿名 session=%s", self.account.name, sid)
+                return sid
+
+            msg = str(data.get("message") or data.get("msg") or "")
+            # 10400 / 文案含「频繁」→ 限流，退避后重试
+            rate_limited = code == "10400" or "频繁" in msg or "稍后再试" in msg
+            if rate_limited and attempt < max_retries:
+                # 15s, 25s, 35s… 加一点抖动
+                wait = 10 + attempt * 10 + random.uniform(0, 3)
+                logger.warning(
+                    "[%s] init 限流 code=%s %s，%.0f 秒后重试 (%s/%s)",
+                    self.account.name,
+                    code,
+                    msg,
+                    wait,
+                    attempt,
+                    max_retries,
+                )
+                time.sleep(wait)
+                continue
             raise RuntimeError(f"初始化 session 失败: {data}")
-        sess = (data.get("data") or {}).get("session") or {}
-        sid = str(sess.get("id") or "")
-        if not sid:
-            raise RuntimeError(f"init 未返回 session.id: {data}")
-        self.vapp_session_id = sid
-        logger.info("[%s] 匿名 session=%s", self.account.name, sid)
-        return sid
+
+        raise RuntimeError(f"初始化 session 失败: {last_data}")
 
     def login_with_password(self) -> Tuple[str, str]:
         """
@@ -1125,7 +1172,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     results = []
-    for acc in cfg.accounts:
+    n_acc = len(cfg.accounts)
+    for idx, acc in enumerate(cfg.accounts):
+        if idx > 0 and cfg.account_interval > 0:
+            wait = cfg.account_interval + random.uniform(0, 3)
+            logger.info(
+                "多账号间隔 %.0f 秒后再跑 [%s]（%s/%s）…",
+                wait,
+                acc.name,
+                idx + 1,
+                n_acc,
+            )
+            time.sleep(wait)
+
         if args.lottery_only:
             client = WangChaoClient(acc, cfg)
             try:
@@ -1145,6 +1204,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     }
                 )
             except Exception as e:
+                logger.exception("[%s] 异常: %s", acc.name, e)
                 results.append({"name": acc.name, "ok": False, "error": str(e)})
         else:
             results.append(run_account(acc, cfg, dry_run=args.dry_run))

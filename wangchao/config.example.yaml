@@ -21,6 +21,10 @@ api:
   # 文章之间的冷却（前端 clickCooldown=8）
   click_cooldown: 8
   jitter: 1.5
+  # 多账号之间间隔秒数（防 init「操作过于频繁」）
+  account_interval: 20
+  # init 被限流时的最大重试次数
+  init_max_retries: 5
 
 lottery:
   enable: true
