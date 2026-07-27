@@ -1,0 +1,21 @@
+# 私有 / 本地工程（不进本仓库）
+yongpai/
+
+# 密钥与本地配置
+**/config.yaml
+**/.env
+**/.env.*
+
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/venv/
+**/*.egg-info/
+.pytest_cache/
+
+# 日志与系统
+**/*.log
+.DS_Store
+.idea/
+.vscode/

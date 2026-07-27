@@ -1,0 +1,36 @@
+# 本地调试用配置（青龙请直接用环境变量，见 README）
+# cp config.example.yaml config.yaml
+
+accounts:
+  # Cookie 优先；同时填 username/password 时，Cookie 失效会自动重登
+  - name: "主号"
+    domain: "www.hifiti.com"
+    cookie: "bbs_sid=请替换; bbs_token=请替换"
+    username: "可选_备用登录用户名"
+    password: "可选_备用登录密码"
+
+  # 也可以只配密码
+  # - name: "备号"
+  #   domain: "www.hifiti.com"
+  #   username: "xxx"
+  #   password: "xxx"
+
+timeout: 20
+max_retries: 3
+retry_interval: 15
+
+notify:
+  # Bark：二选一
+  # 完整 URL（App 里复制），如 https://api.day.app/xxxxxxxx/
+  bark_url: ""
+  # 或只填 key
+  bark_key: ""
+  bark_server: "https://api.day.app"
+  bark_group: "HiFiNi"
+  # bark_sound: "bell"
+  # bark_icon: "https://example.com/icon.png"
+  # bark_level: "active"
+
+  # 可选其它渠道
+  serverchan_key: ""
+  webhook_url: ""
