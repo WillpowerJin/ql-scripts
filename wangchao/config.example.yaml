@@ -1,0 +1,31 @@
+# 复制为 config.yaml 后填写（config.yaml 不进仓库）
+# cp config.example.yaml config.yaml
+
+accounts:
+  # 推荐：手机号 + 密码（脚本自动登录并获取 account/session）
+  - name: "主号"
+    phone: "1xxxxxxxxxx"
+    password: "你的密码"
+
+  # 备用：抓包得到的 session（密码方式优先，两者都填时也会走密码登录）
+  # - name: "备号"
+  #   account_id: ""
+  #   session_id: ""
+  #   device_id: "1"
+
+api:
+  base_url: "https://xmt.taizhou.com.cn"
+  vapp_url: "https://vapp.taizhou.com.cn"
+  passport_url: "https://passport.tmuyun.com"
+  timeout: 20
+  # 文章之间的冷却（前端 clickCooldown=8）
+  click_cooldown: 8
+  jitter: 1.5
+
+lottery:
+  enable: true
+  base_url: "https://srv-app.taizhou.com.cn"
+  activity_id: 67
+
+log:
+  level: "INFO"

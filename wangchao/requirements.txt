@@ -1,0 +1,4 @@
+requests>=2.28.0
+PyYAML>=6.0
+gmssl>=3.2.2
+pycryptodomex>=3.15.0
