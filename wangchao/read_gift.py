@@ -123,11 +123,11 @@ DEFAULT_BARK_SERVER = "https://api.day.app"
 
 # 海外 VPS 系统 DNS 常解析不了国内权威域名；优先用国内 DoH
 DEFAULT_DOH_URLS = (
-    "https://dns.alidns.com/resolve",  # 阿里
-    "https://doh.pub/dns-query",  # 腾讯
+    "https://doh.pub/dns-query",  # 腾讯（海外机上相对稳）
+    "https://dns.alidns.com/resolve",  # 阿里（偶发返回 127.0.0.1，已过滤）
     "https://dns.google/resolve",
 )
-# 脚本关注的域名（启动时预解析）
+# 脚本关注的域名（启动时强制 DoH 预解析，不信任系统 DNS）
 KNOWN_HOSTS = (
     "xmt.taizhou.com.cn",
     "vapp.taizhou.com.cn",
@@ -135,6 +135,13 @@ KNOWN_HOSTS = (
     "srv-app.taizhou.com.cn",
     "maidian.taizhou.com.cn",
 )
+# DoH 全失败时的兜底 IP（CDN 可能变更；仅最后手段）
+FALLBACK_IPS: Dict[str, Tuple[str, ...]] = {
+    "xmt.taizhou.com.cn": ("111.3.157.195", "122.226.164.155"),
+    "vapp.taizhou.com.cn": ("122.226.164.155",),
+    "srv-app.taizhou.com.cn": ("122.226.164.155",),
+    "maidian.taizhou.com.cn": ("122.226.164.155",),
+}
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 logger = logging.getLogger("wangchao")
@@ -439,11 +446,34 @@ def _is_ipv4(s: str) -> bool:
         return False
 
 
-def doh_resolve(hostname: str, doh_urls: List[str], timeout: float = 8.0) -> Optional[str]:
-    """通过 DNS-over-HTTPS 解析 A 记录，返回第一个 IPv4。"""
+def _is_usable_public_ip(ip: str) -> bool:
+    """过滤 127.0.0.1 / 内网 / 假 IP，避免 DoH 污染。"""
+    if not _is_ipv4(ip):
+        return False
+    parts = [int(x) for x in ip.split(".")]
+    a, b = parts[0], parts[1]
+    if a == 0 or a == 127:
+        return False
+    if a == 10:
+        return False
+    if a == 172 and 16 <= b <= 31:
+        return False
+    if a == 192 and b == 168:
+        return False
+    if a == 169 and b == 254:
+        return False
+    # Clash/fake-ip 常用 198.18.0.0/15
+    if a == 198 and 18 <= b <= 19:
+        return False
+    return True
+
+
+def doh_resolve(
+    hostname: str, doh_urls: List[str], timeout: float = 6.0
+) -> Optional[str]:
+    """通过 DNS-over-HTTPS 解析 A 记录，返回第一个可用公网 IPv4。"""
     for base in doh_urls:
         try:
-            # 阿里/Google: ?name=&type=A ；部分实现用 dns-query
             if "dns-query" in base and "name=" not in base:
                 url = f"{base}?name={hostname}&type=A"
             else:
@@ -455,77 +485,119 @@ def doh_resolve(hostname: str, doh_urls: List[str], timeout: float = 8.0) -> Opt
                 timeout=timeout,
             )
             if r.status_code != 200:
+                logger.debug("DoH HTTP %s %s", r.status_code, base)
                 continue
             data = r.json()
+            status = data.get("Status")
+            if status not in (0, "0", None):
+                logger.debug("DoH Status=%s host=%s via %s", status, hostname, base)
             for ans in data.get("Answer") or []:
-                if ans.get("type") == 1 and _is_ipv4(str(ans.get("data") or "")):
-                    ip = str(ans["data"])
+                if ans.get("type") != 1:
+                    continue
+                ip = str(ans.get("data") or "").strip()
+                if _is_usable_public_ip(ip):
                     logger.info("DoH 解析 %s -> %s (%s)", hostname, ip, base)
                     return ip
+                logger.warning(
+                    "DoH 丢弃无效 IP %s -> %s (%s)", hostname, ip, base
+                )
         except Exception as e:
             logger.debug("DoH %s 失败: %s", base, e)
     return None
 
 
-# install_dns_fallback 写入，供 getaddrinfo 运行时 DoH
+def resolve_host(hostname: str, doh_urls: List[str]) -> Optional[str]:
+    """缓存 → DoH → 内置兜底 IP。"""
+    if hostname in _DNS_CACHE and _is_usable_public_ip(_DNS_CACHE[hostname]):
+        return _DNS_CACHE[hostname]
+    ip = doh_resolve(hostname, doh_urls)
+    if ip:
+        _DNS_CACHE[hostname] = ip
+        return ip
+    for fb in FALLBACK_IPS.get(hostname) or ():
+        if _is_usable_public_ip(fb):
+            logger.warning(
+                "DoH 失败，使用内置兜底 IP %s -> %s（若不通请 dig 后设 WANGCHAO_HOSTS）",
+                hostname,
+                fb,
+            )
+            _DNS_CACHE[hostname] = fb
+            return fb
+    return None
+
+
+# install_dns_fallback 写入
 _DOH_URLS_RUNTIME: List[str] = list(DEFAULT_DOH_URLS)
 _DOH_RUNTIME_ENABLE = True
+# 对这些域名：始终走缓存/DoH，不信任系统 DNS（海外机系统 DNS 极不稳定）
+_FORCE_CACHE_HOSTS: set = set()
 
 
 def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-    """系统 DNS 失败时使用缓存 / 即时 DoH。"""
-    try:
-        return _ORIG_GETADDRINFO(host, port, family, type, proto, flags)
-    except socket.gaierror:
-        ip = _DNS_CACHE.get(host)
-        if not ip and _DOH_RUNTIME_ENABLE and isinstance(host, str) and host:
-            ip = doh_resolve(host, _DOH_URLS_RUNTIME)
-            if ip:
-                _DNS_CACHE[host] = ip
-        if not ip:
-            raise
-        logger.debug("getaddrinfo 回退 %s -> %s", host, ip)
+    """
+    关键域名优先用缓存/DoH；
+    其它域名：系统 DNS 失败后再 DoH。
+    """
+    host_s = host.decode("utf-8", "replace") if isinstance(host, bytes) else str(host)
+
+    def _from_ip(ip: str):
         return [
             (
                 socket.AF_INET,
                 socket.SOCK_STREAM,
                 6,
                 "",
-                (ip, int(port) if port else 0),
+                (ip, int(port) if port not in (None, "", 0) else 0),
             )
         ]
+
+    # 已知业务域名：强制缓存，避免系统 DNS 假成功/假失败
+    if host_s in _FORCE_CACHE_HOSTS or host_s in _DNS_CACHE:
+        ip = _DNS_CACHE.get(host_s)
+        if not ip and _DOH_RUNTIME_ENABLE:
+            ip = resolve_host(host_s, _DOH_URLS_RUNTIME)
+        if ip:
+            return _from_ip(ip)
+
+    try:
+        return _ORIG_GETADDRINFO(host, port, family, type, proto, flags)
+    except (socket.gaierror, OSError):
+        ip = _DNS_CACHE.get(host_s)
+        if not ip and _DOH_RUNTIME_ENABLE and host_s:
+            ip = resolve_host(host_s, _DOH_URLS_RUNTIME)
+        if not ip:
+            raise
+        logger.info("getaddrinfo 回退 %s -> %s", host_s, ip)
+        return _from_ip(ip)
 
 
 def install_dns_fallback(cfg: AppConfig) -> None:
     """
     安装 DNS 回退：
     1) 静态 hosts / 环境变量
-    2) DoH 预解析关键域名
-    3) patch getaddrinfo：系统解析失败时用缓存 / 即时 DoH
+    2) 对 KNOWN_HOSTS 强制 DoH（不跳过，海外系统 DNS 不可信）
+    3) patch getaddrinfo
     """
-    global _DNS_PATCHED, _DOH_URLS_RUNTIME, _DOH_RUNTIME_ENABLE
+    global _DNS_PATCHED, _DOH_URLS_RUNTIME, _DOH_RUNTIME_ENABLE, _FORCE_CACHE_HOSTS
 
     _DOH_URLS_RUNTIME = list(cfg.doh_urls or DEFAULT_DOH_URLS)
     _DOH_RUNTIME_ENABLE = bool(cfg.doh_enable)
+    _FORCE_CACHE_HOSTS = set(KNOWN_HOSTS)
 
     for h, ip in (cfg.hosts or {}).items():
-        if h and _is_ipv4(ip):
+        if h and _is_usable_public_ip(ip):
             _DNS_CACHE[h] = ip
+            _FORCE_CACHE_HOSTS.add(h)
             logger.info("静态 hosts %s -> %s", h, ip)
 
     if cfg.doh_enable:
         for host in KNOWN_HOSTS:
-            if host in _DNS_CACHE:
+            if host in _DNS_CACHE and _is_usable_public_ip(_DNS_CACHE[host]):
                 continue
-            # 系统能解析则跳过
-            try:
-                _ORIG_GETADDRINFO(host, 443, type=socket.SOCK_STREAM)
-                continue
-            except socket.gaierror:
-                pass
-            ip = doh_resolve(host, _DOH_URLS_RUNTIME)
-            if ip:
-                _DNS_CACHE[host] = ip
+            # 强制 DoH，不信任系统 DNS
+            ip = resolve_host(host, _DOH_URLS_RUNTIME)
+            if not ip:
+                logger.warning("无法解析 %s（DoH+兜底均失败）", host)
 
     if not _DNS_PATCHED and (cfg.doh_enable or _DNS_CACHE):
         socket.getaddrinfo = _patched_getaddrinfo  # type: ignore[assignment]
@@ -537,12 +609,9 @@ def install_dns_fallback(cfg: AppConfig) -> None:
                 ", ".join(f"{k}={v}" for k, v in sorted(_DNS_CACHE.items())),
             )
         else:
-            logger.info("已启用 DNS 回退（运行时 DoH），预解析暂无结果")
-    elif cfg.doh_enable and not _DNS_CACHE:
-        logger.warning(
-            "DoH 预解析未得到 IP；若仍 Failed to resolve，"
-            "请配置 WANGCHAO_HOSTS 或换国内机器"
-        )
+            logger.warning(
+                "DNS 回退已安装但缓存为空；请设置 WANGCHAO_HOSTS 或换国内机器"
+            )
 
 
 # ---------------------------------------------------------------------------
