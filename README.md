@@ -13,21 +13,59 @@
 
 ## 青龙订阅
 
-在青龙「订阅管理」添加，或 SSH 执行：
+### 新建订阅（推荐按面板字段填写）
+
+青龙 → **订阅管理** → **创建订阅**：
+
+| 字段 | 填写 |
+|------|------|
+| 名称 | `ql-scripts`（随意） |
+| 类型 | 公开仓库 |
+| 链接 | `https://github.com/WillpowerJin/ql-scripts.git` |
+| 分支 | `main` |
+| **白名单** | `checkin\|read_gift` |
+| **黑名单** | `README\|config\|example\|requirements\|\.md\|\.yaml\|\.yml\|\.txt` |
+| 扩展名 | `py` |
+| 定时规则 | 按需，例如 `30 8 * * *`（仅自动拉库，不是跑任务） |
+
+> **白名单必须带上 `read_gift`**，否则只会拉到 `hifiti/checkin.py`，不会拉 `wangchao/read_gift.py`。  
+> 白名单匹配的是**路径里是否包含关键字**，多个用 `\|` 分隔。
+
+### 已有订阅（只点「运行」不够）
+
+若你以前是按旧文档只填了白名单 `checkin`：
+
+1. 打开该订阅 → **编辑**
+2. 把白名单改成：`checkin|read_gift`
+3. **保存**后再点运行
+
+只点「运行」会沿用旧参数，**不会**自动读本仓库 README，也**不会**自动加上望潮脚本。
+
+### 命令行等价写法
 
 ```bash
-# 只拉取 .py 脚本；黑名单排除文档与示例配置
 ql repo https://github.com/WillpowerJin/ql-scripts.git "checkin|read_gift" "README|config|example|requirements|\.md|\.yaml|\.yml|\.txt" "" "main" "py"
 ```
 
-说明：
+参数含义：
 
-- **白名单** `checkin|read_gift`：匹配 HiFiNi 签到与望潮阅读脚本
-- **黑名单**：排除 README、示例配置等，避免进青龙任务列表
-- **扩展名** `py`：仅同步 Python 文件
-- 分支默认 `main`
+| 位置 | 含义 | 本仓库取值 |
+|------|------|------------|
+| 1 | 仓库地址 | 见上 |
+| 2 | 白名单（路径包含即拉取） | `checkin\|read_gift` |
+| 3 | 黑名单（路径包含则跳过） | 文档/配置等 |
+| 4 | 依赖文件 | 空 |
+| 5 | 分支 | `main` |
+| 6 | 扩展名 | `py` |
 
-账号、Cookie、密码等**不要写进仓库**，在青龙「环境变量」中配置。各脚本所需变量见对应文档页。
+拉取成功后，脚本管理中应能看到类似：
+
+```text
+…/hifiti/checkin.py
+…/wangchao/read_gift.py
+```
+
+账号、Cookie、密码等**不要写进仓库**，在青龙「环境变量」中配置。各脚本变量见对应子目录 README。
 
 ## 目录结构
 

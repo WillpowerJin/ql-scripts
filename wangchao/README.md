@@ -45,9 +45,30 @@ accounts:
 
 ## 青龙面板
 
-**依赖管理** 添加：`requests`、`gmssl`、`pycryptodomex`（本地 yaml 可选 `PyYAML`）
+### 1. 订阅拉取（必做：白名单含 `read_gift`）
 
-**环境变量（推荐）：**
+本脚本文件名为 `read_gift.py`。若订阅白名单只有 `checkin`，**永远拉不到本脚本**。
+
+在仓库订阅里把白名单设为：
+
+```text
+checkin|read_gift
+```
+
+完整订阅说明见 [根目录 README](../README.md#青龙订阅)。
+
+- **新建订阅**：白名单直接填 `checkin|read_gift`
+- **已有订阅**：必须 **编辑 → 改白名单 → 保存 → 再运行**；只点「运行」不会更新参数
+
+成功后脚本路径类似：`…/wangchao/read_gift.py`。
+
+### 2. 依赖
+
+依赖管理添加：`requests`、`gmssl`、`pycryptodomex`（本地 yaml 可选 `PyYAML`）
+
+### 3. 环境变量
+
+**推荐：**
 
 ```text
 WANGCHAO_ACCOUNTS=[{"name":"主号","phone":"1xxxxxxxxxx","password":"xxx"}]
@@ -69,8 +90,12 @@ WANGCHAO_NAME=主号
 WANGCHAO_LOTTERY=0    # 关闭抽奖
 ```
 
-**定时示例：** `30 8 * * *`  
-**任务命令：** `task wangchao/read_gift.py`（按青龙实际路径调整）
+### 4. 定时任务
+
+| 项 | 建议 |
+|----|------|
+| 定时 | `30 8 * * *`（每天 8:30） |
+| 命令 | `task …/wangchao/read_gift.py`（以脚本管理中实际路径为准） |
 
 ## 备用：抓包 session
 
@@ -90,6 +115,7 @@ accounts:
 
 | 现象 | 处理 |
 |------|------|
+| 订阅后没有 `read_gift.py` | 白名单改为 `checkin\|read_gift` 并保存后再运行订阅 |
 | 账号不存在 / 密码错误 | 使用望潮注册的手机号与密码 |
 | needYz=true | 先在 App 内完成人机验证 |
 | 已读失败 | 重跑即可（会重新密码登录） |
