@@ -401,11 +401,11 @@ class HiFiTiClient:
         if not acc.has_password():
             raise RuntimeError("未配置用户名密码，无法登录")
 
-        logger.info("[%s] 访问首页...", acc.name)
+        logger.info("[%s] 🌐 访问首页…", acc.name)
         self.session.get(f"{self.base}/", timeout=self.cfg.timeout)
 
         password_md5 = hashlib.md5(acc.password.encode("utf-8")).hexdigest()
-        logger.info("[%s] 使用账号密码登录 (user=%s)...", acc.name, acc.username)
+        logger.info("[%s] 📱 账号密码登录（%s）…", acc.name, acc.username)
 
         resp = self.session.post(
             f"{self.base}/user-login.htm",
@@ -429,7 +429,7 @@ class HiFiTiClient:
         if not ok:
             raise RuntimeError(f"登录失败: {text[:200]}")
 
-        logger.info("[%s] 登录成功", acc.name)
+        logger.info("[%s] ✅ 登录成功", acc.name)
 
     def apply_cookie(self) -> None:
         cookie = self.account.cookie
@@ -446,7 +446,7 @@ class HiFiTiClient:
         missing = [x for x in ("bbs_sid", "bbs_token") if x not in names]
         if missing:
             logger.warning(
-                "[%s] Cookie 中缺少 %s，签到可能失败",
+                "[%s] ⚠️ Cookie 缺少 %s，签到可能失败",
                 self.account.name,
                 ", ".join(missing),
             )
@@ -468,7 +468,10 @@ class HiFiTiClient:
             )
             html = resp.text
             if resp.status_code != 200 or "请登录" in html:
-                logger.warning("[%s] 获取金币失败：页面异常或未登录", self.account.name)
+                logger.warning(
+                    "[%s] ⚠️ 获取金币失败：页面异常或未登录",
+                    self.account.name,
+                )
                 return None
 
             patterns = [
@@ -482,13 +485,20 @@ class HiFiTiClient:
                 if m:
                     gold = m.group(1).strip()
                     if gold:
-                        logger.info("[%s] 当前金币: %s", self.account.name, gold)
+                        logger.info(
+                            "[%s] 💰 当前金币：%s",
+                            self.account.name,
+                            gold,
+                        )
                         return gold
 
-            logger.warning("[%s] 个人中心未解析到金币字段", self.account.name)
+            logger.warning(
+                "[%s] ⚠️ 个人中心未解析到金币字段",
+                self.account.name,
+            )
             return None
         except Exception as e:
-            logger.warning("[%s] 获取金币异常: %s", self.account.name, e)
+            logger.warning("[%s] ⚠️ 获取金币异常: %s", self.account.name, e)
             return None
 
     def _attach_gold(self, result: dict[str, Any]) -> dict[str, Any]:
@@ -563,7 +573,7 @@ class HiFiTiClient:
         }
         for attempt in range(1, self.cfg.max_retries + 1):
             logger.info(
-                "[%s] 第 %d/%d 次签到...",
+                "[%s] ✍️ 签到中（%d/%d）…",
                 self.account.name,
                 attempt,
                 self.cfg.max_retries,
@@ -578,7 +588,7 @@ class HiFiTiClient:
                     "raw": "",
                     "error": "network",
                 }
-                logger.warning("[%s] %s", self.account.name, last["message"])
+                logger.warning("[%s] 🌐 %s", self.account.name, last["message"])
             except RuntimeError as e:
                 last = {
                     "ok": False,
@@ -587,7 +597,7 @@ class HiFiTiClient:
                     "raw": "",
                     "error": "server",
                 }
-                logger.warning("[%s] %s", self.account.name, last["message"])
+                logger.warning("[%s] ⚠️ %s", self.account.name, last["message"])
 
             if last.get("ok"):
                 return last
@@ -597,7 +607,7 @@ class HiFiTiClient:
 
             if attempt < self.cfg.max_retries:
                 logger.info(
-                    "[%s] 等待 %ds 后重试...",
+                    "[%s] ⏳ 等待 %ds 后重试…",
                     self.account.name,
                     self.cfg.retry_interval,
                 )
@@ -612,7 +622,7 @@ class HiFiTiClient:
         result: dict[str, Any]
 
         if acc.has_cookie():
-            logger.info("[%s] 使用 Cookie 签到", acc.name)
+            logger.info("[%s] 🍪 使用 Cookie 签到", acc.name)
             self.apply_cookie()
             result = self._sign_with_retries()
             if result.get("ok"):
@@ -621,7 +631,7 @@ class HiFiTiClient:
 
             if result.get("error") == "auth" and acc.has_password():
                 logger.warning(
-                    "[%s] Cookie 已失效，尝试账号密码重新登录...",
+                    "[%s] 🔄 Cookie 已失效，尝试密码重新登录…",
                     acc.name,
                 )
                 self.reset_session()
@@ -635,7 +645,7 @@ class HiFiTiClient:
                 result = self._sign_with_retries()
                 result["via"] = "cookie→password"
                 if result.get("ok"):
-                    logger.info("[%s] 密码重登后签到成功", acc.name)
+                    logger.info("[%s] ✅ 密码重登后签到成功", acc.name)
                     return self._attach_gold(result)
                 return result
 
@@ -672,8 +682,86 @@ class HiFiTiClient:
 
 
 # ---------------------------------------------------------------------------
-# 通知：Bark 为主
+# 通知：Bark 为主 + 摘要排版
 # ---------------------------------------------------------------------------
+
+def _via_label(via: str) -> str:
+    mapping = {
+        "cookie": "Cookie",
+        "password": "密码",
+        "cookie+password": "Cookie+密码",
+        "cookie→password": "Cookie失效→密码重登",
+        "cookie→login_failed": "Cookie失效且密码失败",
+        "error": "异常",
+        "none": "未配置",
+    }
+    return mapping.get(via, via or "—")
+
+
+def format_summary(
+    account_results: list[tuple[str, dict[str, Any]]],
+) -> str:
+    """Bark / 青龙日志共用的多行摘要。"""
+    from datetime import datetime as _dt
+
+    lines: list[str] = []
+    lines.append(f"📅 {_dt.now().strftime('%m-%d %H:%M')}")
+    lines.append("")
+
+    ok_n = sum(1 for _, r in account_results if r.get("ok"))
+    fail_n = len(account_results) - ok_n
+
+    for i, (name, result) in enumerate(account_results):
+        ok = bool(result.get("ok"))
+        already = bool(result.get("already"))
+        msg = str(result.get("message") or "").strip()
+        via = _via_label(str(result.get("via") or ""))
+        gold = result.get("gold")
+
+        head = f"{'✅' if ok else '❌'} {name}"
+        lines.append(head)
+
+        if ok and already:
+            lines.append("   ✍️ 签到：今日已签过 ✅")
+        elif ok:
+            lines.append(f"   ✍️ 签到：成功 ✅" + (f"（{msg}）" if msg and "成功" not in msg else ""))
+        else:
+            short = msg if len(msg) <= 100 else msg[:97] + "…"
+            lines.append(f"   ✍️ 签到：失败 ❌")
+            if short:
+                lines.append(f"   ⚠️ {short}")
+
+        lines.append(f"   🔐 方式：{via}")
+        if gold is not None:
+            lines.append(f"   💰 金币：{gold}")
+
+        if i < len(account_results) - 1:
+            lines.append("")
+
+    lines.append("")
+    lines.append("────────")
+    if fail_n == 0:
+        lines.append(f"📊 合计：{ok_n}/{len(account_results)} 全部成功 🎉")
+    elif ok_n == 0:
+        lines.append(f"📊 合计：{ok_n}/{len(account_results)} 全部失败")
+    else:
+        lines.append(
+            f"📊 合计：成功 {ok_n} · 失败 {fail_n}（共 {len(account_results)} 号）"
+        )
+    return "\n".join(lines)
+
+
+def format_notify_title(account_results: list[tuple[str, dict[str, Any]]]) -> str:
+    ok_n = sum(1 for _, r in account_results if r.get("ok"))
+    n = len(account_results)
+    if n == 0:
+        return "HiFiNi 签到"
+    if ok_n == n:
+        return f"HiFiNi 签到 ✅ {ok_n}/{n}"
+    if ok_n == 0:
+        return f"HiFiNi 签到 ❌ 0/{n}"
+    return f"HiFiNi 签到 ⚠️ {ok_n}/{n}"
+
 
 def _build_bark_endpoint(cfg: NotifyConfig) -> Optional[str]:
     """
@@ -682,7 +770,6 @@ def _build_bark_endpoint(cfg: NotifyConfig) -> Optional[str]:
     """
     if cfg.bark_url:
         url = cfg.bark_url.strip().rstrip("/")
-        # 用户可能贴了带占位的完整示例，去掉尾部空 path
         return url
     if cfg.bark_key:
         server = (cfg.bark_server or DEFAULT_BARK_SERVER).rstrip("/")
@@ -695,7 +782,6 @@ def send_bark(cfg: NotifyConfig, title: str, body: str) -> None:
     if not endpoint:
         return
 
-    # POST JSON 更稳妥（支持换行、中文、额外参数）
     payload: dict[str, Any] = {
         "title": title,
         "body": body,
@@ -708,24 +794,21 @@ def send_bark(cfg: NotifyConfig, title: str, body: str) -> None:
     if cfg.bark_level:
         payload["level"] = cfg.bark_level
 
-    # endpoint 可能是 https://api.day.app/KEY 或 https://api.day.app/KEY/
     post_url = endpoint if endpoint.endswith("/push") else endpoint
-    # Bark 官方：POST https://api.day.app/KEY  {title, body, ...}
-    # 也支持 GET /KEY/title/body
 
     try:
         r = requests.post(post_url, json=payload, timeout=15)
         if r.status_code >= 400:
-            # 回退 GET
             get_url = (
                 f"{endpoint.rstrip('/')}/"
                 f"{quote(title, safe='')}/"
                 f"{quote(body, safe='')}"
             )
             r = requests.get(get_url, timeout=15)
-        logger.info("Bark 通知: HTTP %s %s", r.status_code, r.text[:200])
+        logger.info("📣 Bark 已推送（HTTP %s）", r.status_code)
+        logger.debug("Bark 响应: %s", r.text[:200])
     except Exception as e:
-        logger.warning("Bark 通知失败: %s", e)
+        logger.warning("📣 Bark 推送失败: %s", e)
 
 
 def send_serverchan(key: str, title: str, content: str) -> None:
@@ -741,14 +824,15 @@ def send_serverchan(key: str, title: str, content: str) -> None:
         r = requests.post(
             url, json={"title": title, "desp": content}, timeout=10
         )
-        logger.info("Server酱通知: %s", r.text[:200])
+        logger.info("📣 Server酱 已推送")
+        logger.debug("Server酱响应: %s", r.text[:200])
     except Exception as e:
-        logger.warning("Server酱通知失败: %s", e)
+        logger.warning("📣 Server酱推送失败: %s", e)
 
 
 def send_notify(cfg: NotifyConfig, title: str, content: str) -> None:
     if not cfg.enabled():
-        logger.info("未配置通知渠道，跳过推送")
+        logger.info("📣 未配置 Bark/通知渠道，跳过推送")
         return
 
     if cfg.bark_url or cfg.bark_key:
@@ -764,9 +848,9 @@ def send_notify(cfg: NotifyConfig, title: str, content: str) -> None:
                 json={"title": title, "content": content},
                 timeout=10,
             )
-            logger.info("Webhook 通知: HTTP %s", r.status_code)
+            logger.info("📣 Webhook 已推送（HTTP %s）", r.status_code)
         except Exception as e:
-            logger.warning("Webhook 通知失败: %s", e)
+            logger.warning("📣 Webhook 推送失败: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -783,6 +867,10 @@ def setup_logging(verbose: bool) -> None:
     )
 
 
+def log_banner(title: str) -> None:
+    logger.info("──────── %s ────────", title)
+
+
 def resolve_config(args: argparse.Namespace) -> AppConfig:
     # 显式 --config
     if args.config:
@@ -791,16 +879,13 @@ def resolve_config(args: argparse.Namespace) -> AppConfig:
     # 青龙 / 环境变量优先
     env_cfg = load_config_from_env()
     if env_cfg is not None:
-        logger.info(
-            "已从环境变量加载 %d 个账号",
-            len(env_cfg.accounts),
-        )
+        logger.info("📦 已从环境变量加载 %d 个账号", len(env_cfg.accounts))
         return env_cfg
 
     # 本地 config.yaml 兜底
     local = SCRIPT_DIR / "config.yaml"
     if local.is_file():
-        logger.info("使用本地配置: %s", local)
+        logger.info("📦 使用本地配置: %s", local)
         return load_config_yaml(local)
 
     raise FileNotFoundError(
@@ -821,22 +906,22 @@ def main() -> int:
     try:
         cfg = resolve_config(args)
     except Exception as e:
-        logger.error("%s", e)
+        logger.error("❌ %s", e)
         return 2
 
-    lines: list[str] = []
-    any_fail = False
+    logger.info("🎵 HiFiNi 自动签到")
+    logger.info("   账号 %s 个 · 通知 %s", len(cfg.accounts), "开" if cfg.notify.enabled() else "关")
+
+    account_results: list[tuple[str, dict[str, Any]]] = []
 
     for acc in cfg.accounts:
-        logger.info(
-            "======== 账号: %s (%s) ========",
-            acc.name,
-            acc.auth_label(),
-        )
+        log_banner(f"👤 {acc.name}")
+        logger.info("[%s] 🔐 鉴权配置：%s", acc.name, _via_label(acc.auth_label()))
         try:
             result = HiFiTiClient(acc, cfg).run()
         except Exception as e:
-            logger.exception("[%s] 未处理异常", acc.name)
+            logger.error("[%s] 💥 未处理异常: %s", acc.name, e)
+            logger.debug("exception traceback", exc_info=True)
             result = {
                 "ok": False,
                 "already": False,
@@ -845,30 +930,45 @@ def main() -> int:
                 "via": "error",
             }
 
-        via = result.get("via") or ""
-        via_tip = f" [{via}]" if via else ""
+        via = str(result.get("via") or "")
         gold = result.get("gold")
-        gold_tip = f" | 金币: {gold}" if gold is not None else ""
 
         if result.get("ok"):
-            tag = "已签过" if result.get("already") else "签到成功"
-            line = (
-                f"✅ [{acc.name}] {tag}{via_tip}: "
-                f"{result.get('message')}{gold_tip}"
-            )
-            logger.info(line)
+            if result.get("already"):
+                logger.info("[%s] ✅ 今日已签过", acc.name)
+            else:
+                logger.info(
+                    "[%s] ✅ 签到成功：%s",
+                    acc.name,
+                    result.get("message") or "OK",
+                )
+            if gold is not None:
+                logger.info("[%s] 💰 金币余额：%s", acc.name, gold)
+            logger.info("[%s] 💚 本号流程结束", acc.name)
         else:
-            any_fail = True
-            line = f"❌ [{acc.name}] 签到失败{via_tip}: {result.get('message')}"
-            logger.error(line)
-        lines.append(line)
+            logger.error(
+                "[%s] ❌ 签到失败：%s",
+                acc.name,
+                result.get("message") or "未知错误",
+            )
+            logger.warning("[%s] 💔 本号未成功", acc.name)
 
-    summary = "\n".join(lines)
-    print("\n======== 签到结果 ========\n" + summary)
+        if via:
+            logger.debug("[%s] via=%s", acc.name, via)
 
-    title = "HiFiNi 签到完成" if not any_fail else "HiFiNi 签到有失败"
+        account_results.append((acc.name, result))
+
+    summary = format_summary(account_results)
+    title = format_notify_title(account_results)
+
+    logger.info("")
+    log_banner("执行结果")
+    for line in summary.splitlines():
+        logger.info("%s", line)
+
     send_notify(cfg.notify, title, summary)
 
+    any_fail = any(not r.get("ok") for _, r in account_results)
     return 1 if any_fail else 0
 
 
