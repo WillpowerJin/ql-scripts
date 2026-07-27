@@ -37,7 +37,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "checkin" "README|config|
 定时（脚本头已写，也可自行改）：
 
 ```
-0 9 * * *
+0 8 * * *
 ```
 
 ## 环境变量（账号）

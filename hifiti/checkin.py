@@ -3,7 +3,7 @@
 """
 HiFiNi 音乐磁场 (https://www.hifiti.com) 自动签到
 
-cron: 0 9 * * *
+cron: 0 8 * * *
 new Env('HiFiNi签到');
 
 策略：
