@@ -1049,40 +1049,107 @@ def send_notify(cfg: NotifyConfig, title: str, content: str) -> None:
             logger.warning("Webhook 通知失败: %s", e)
 
 
+def _fmt_lottery_line(lot: Dict[str, Any]) -> str:
+    """抽奖结果一行文案。"""
+    msg = str(lot.get("msg") or "").strip()
+    prize = lot.get("prize")
+    if lot.get("already") or "已抽" in msg or "明天" in msg:
+        return f"🎁 抽奖：今日已抽过，明天再来"
+    if lot.get("ok") and str(lot.get("code")) == "200":
+        # 成功中奖 / 谢谢参与
+        if prize is not None and str(prize) not in ("", "None"):
+            detail = msg or f"奖品标识 {prize}"
+        else:
+            detail = msg or "完成"
+        # 常见文案美化
+        if "谢谢" in detail:
+            return f"🎁 抽奖：谢谢参与 🙏"
+        if "元" in detail or "红包" in detail:
+            return f"🎁 抽奖：🎉 {detail}"
+        return f"🎁 抽奖：✅ {detail}"
+    if lot.get("ok"):
+        return f"🎁 抽奖：{msg or '已处理'}"
+    err = msg or lot.get("code") or "未知错误"
+    return f"🎁 抽奖：❌ {err}"
+
+
+def _fmt_read_line(read: Dict[str, Any]) -> str:
+    done = read.get("completed_after")
+    total = read.get("total")
+    marked = int(read.get("marked") or 0)
+    before = read.get("completed_before")
+    if done is None and total is None:
+        return "📖 阅读：—"
+    # 今日已满
+    try:
+        full = int(done) >= int(total) if done is not None and total is not None else False
+    except (TypeError, ValueError):
+        full = False
+    if full and marked == 0:
+        return f"📖 阅读：{done}/{total} 已全部完成 ✅"
+    if full and marked > 0:
+        return f"📖 阅读：{done}/{total}（本次新读 {marked} 篇）✅"
+    if marked > 0:
+        return f"📖 阅读：{done}/{total}（本次 +{marked}）"
+    return f"📖 阅读：{done}/{total}"
+
+
 def format_summary(results: List[Dict[str, Any]], dry_run: bool = False) -> str:
+    """Bark / 日志用的多行摘要。"""
     lines: List[str] = []
+    now = datetime.now().strftime("%m-%d %H:%M")
+    lines.append(f"📅 {now}")
     if dry_run:
-        lines.append("【dry-run】未实际上报/抽奖")
-    for r in results:
-        name = r.get("name") or "?"
+        lines.append("🧪 模式：dry-run（未实际上报 / 抽奖）")
+    lines.append("")
+
+    ok_n = sum(1 for r in results if r.get("ok"))
+    fail_n = len(results) - ok_n
+
+    for i, r in enumerate(results):
+        name = r.get("name") or f"账号{i + 1}"
         ok = r.get("ok")
-        err = r.get("error") or ""
+        err = str(r.get("error") or "").strip()
         read = r.get("read") or {}
         lot = r.get("lottery") or {}
-        status = "✅" if ok else "❌"
-        parts = [f"{status} [{name}]"]
+
+        head = f"{'✅' if ok else '❌'} {name}"
+        lines.append(head)
         if read:
-            parts.append(
-                f"阅读 {read.get('completed_after', '?')}/{read.get('total', '?')}"
-                f"（新完成 {read.get('marked', 0)}）"
-            )
+            lines.append(f"   {_fmt_read_line(read)}")
         if lot:
-            if lot.get("already"):
-                parts.append(f"抽奖: 今日已抽过（{lot.get('msg') or ''}）")
-            elif lot.get("ok"):
-                prize = lot.get("prize")
-                msg = lot.get("msg") or "成功"
-                parts.append(
-                    f"抽奖: {msg}" + (f" prize={prize}" if prize is not None else "")
-                )
-            else:
-                parts.append(f"抽奖失败: {lot.get('msg') or lot.get('code')}")
+            lines.append(f"   {_fmt_lottery_line(lot)}")
         if err:
-            parts.append(f"错误: {err}")
-        lines.append(" · ".join(parts) if len(parts) > 1 else parts[0])
-    ok_n = sum(1 for r in results if r.get("ok"))
-    lines.append(f"合计: {ok_n}/{len(results)} 成功")
+            # 截断过长错误，避免 Bark 刷屏
+            short = err if len(err) <= 120 else err[:117] + "…"
+            lines.append(f"   ⚠️ {short}")
+        if not read and not lot and not err:
+            lines.append("   ℹ️ 无详细结果")
+        if i < len(results) - 1:
+            lines.append("")  # 账号之间空一行
+
+    lines.append("")
+    lines.append("────────")
+    if fail_n == 0:
+        lines.append(f"📊 合计：{ok_n}/{len(results)} 全部成功 🎉")
+    elif ok_n == 0:
+        lines.append(f"📊 合计：{ok_n}/{len(results)} 全部失败")
+    else:
+        lines.append(f"📊 合计：成功 {ok_n} · 失败 {fail_n}（共 {len(results)} 号）")
+
     return "\n".join(lines)
+
+
+def format_notify_title(results: List[Dict[str, Any]]) -> str:
+    ok_n = sum(1 for r in results if r.get("ok"))
+    n = len(results)
+    if n == 0:
+        return "望潮阅读有礼"
+    if ok_n == n:
+        return f"望潮阅读有礼 ✅ {ok_n}/{n}"
+    if ok_n == 0:
+        return f"望潮阅读有礼 ❌ 0/{n}"
+    return f"望潮阅读有礼 ⚠️ {ok_n}/{n}"
 
 
 # ---------------------------------------------------------------------------
@@ -1226,10 +1293,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
 
     summary = format_summary(results, dry_run=args.dry_run)
-    title = (
-        f"望潮阅读有礼 {'成功' if ok_n == len(results) else '部分失败'}"
-        f" ({ok_n}/{len(results)})"
-    )
+    title = format_notify_title(results)
+    logger.info("通知摘要:\n%s", summary)
     # dry-run 默认不推送，避免调试刷屏；可用 WANGCHAO_NOTIFY_DRY_RUN=1 强制推
     if args.dry_run and _env("WANGCHAO_NOTIFY_DRY_RUN") not in ("1", "true", "True"):
         logger.info("dry-run 跳过通知（设 WANGCHAO_NOTIFY_DRY_RUN=1 可推送）")
