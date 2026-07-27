@@ -65,7 +65,8 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "checkin|read_gift" "READ
 …/wangchao/read_gift.py
 ```
 
-账号、Cookie、密码等**不要写进仓库**，在青龙「环境变量」中配置。各脚本变量见对应子目录 README。
+账号、Cookie、密码、Bark 等**不要写进仓库**，在青龙「环境变量」中配置。  
+Bark 与各脚本共用：`BARK_URL` 或 `BARK_KEY`（见 [hifiti](./hifiti/README.md)、[wangchao](./wangchao/README.md)）。
 
 ## 目录结构
 

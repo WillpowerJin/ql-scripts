@@ -68,7 +68,7 @@ checkin|read_gift
 
 ### 3. 环境变量
 
-**推荐：**
+**账号（推荐）：**
 
 ```text
 WANGCHAO_ACCOUNTS=[{"name":"主号","phone":"1xxxxxxxxxx","password":"xxx"}]
@@ -84,10 +84,28 @@ WANGCHAO_NAME=主号
 
 多账号用 `&` 分隔对齐字段。
 
-可选：
+**Bark 通知（与 hifiti 共用，可选）：**
 
 ```text
-WANGCHAO_LOTTERY=0    # 关闭抽奖
+BARK_URL=https://api.day.app/你的Key/
+```
+
+或：
+
+```text
+BARK_KEY=你的Key
+BARK_SERVER=https://api.day.app
+BARK_GROUP=望潮阅读有礼
+```
+
+跑完会推送摘要：各账号阅读进度、抽奖结果、错误信息。  
+未配置 `BARK_*` 时只打日志、不推送。
+
+其它可选：
+
+```text
+WANGCHAO_LOTTERY=0           # 关闭抽奖
+WANGCHAO_NOTIFY_DRY_RUN=1    # dry-run 时也推送（默认 dry-run 不推）
 ```
 
 ### 4. 定时任务
@@ -122,6 +140,7 @@ accounts:
 | 当天已抽过奖 | 正常，明日再跑 |
 | 请重新打开 APP 参与抽奖 | 旧接口文案；请使用最新 `read_gift.py`（`saveUpdate`） |
 | 抽奖没有次数 | 当日未满 12 篇 |
+| 跑完没有 Bark | 配置 `BARK_URL` 或 `BARK_KEY`（可与 hifiti 相同） |
 
 ## 依赖
 

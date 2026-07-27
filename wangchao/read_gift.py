@@ -26,6 +26,11 @@ new Env('望潮阅读有礼');
   WANGCHAO_LOTTERY=0
   WANGCHAO_BASE_URL=https://xmt.taizhou.com.cn
 
+青龙环境变量（Bark 通知，与 hifiti 共用）：
+  BARK_URL   完整推送地址，如 https://api.day.app/你的Key/
+  或 BARK_KEY + 可选 BARK_SERVER（默认 https://api.day.app）
+  可选：BARK_GROUP / BARK_SOUND / BARK_ICON / BARK_LEVEL
+
 依赖：requests, gmssl, pycryptodomex（或 pycryptodome）, PyYAML(本地可选)
 """
 
@@ -42,11 +47,11 @@ import string
 import sys
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 import requests
 
@@ -113,6 +118,7 @@ DEFAULT_UA_APP = (
     f"{APP_VERSION};00000000-699e-76bc-ffff-ffff9e3d172a;"
     f"OPPO PKG110;Android;15;huawei"
 )
+DEFAULT_BARK_SERVER = "https://api.day.app"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 logger = logging.getLogger("wangchao")
@@ -143,8 +149,32 @@ class Account:
 
 
 @dataclass
+class NotifyConfig:
+    """Bark 为主（与 hifiti 环境变量兼容）。"""
+
+    bark_url: str = ""
+    bark_key: str = ""
+    bark_server: str = DEFAULT_BARK_SERVER
+    bark_group: str = "望潮阅读有礼"
+    bark_sound: str = ""
+    bark_icon: str = ""
+    bark_level: str = ""  # active / timeSensitive / passive
+    serverchan_key: str = ""
+    webhook_url: str = ""
+
+    def enabled(self) -> bool:
+        return bool(
+            self.bark_url
+            or self.bark_key
+            or self.serverchan_key
+            or self.webhook_url
+        )
+
+
+@dataclass
 class AppConfig:
     accounts: List[Account]
+    notify: NotifyConfig = field(default_factory=NotifyConfig)
     base_url: str = DEFAULT_BASE_URL
     vapp_url: str = DEFAULT_VAPP_URL
     passport_url: str = DEFAULT_PASSPORT_URL
@@ -157,11 +187,35 @@ class AppConfig:
     log_level: str = "INFO"
 
 
+def _env(name: str, default: str = "") -> str:
+    return (os.environ.get(name) or default).strip()
+
+
 def _split_env(key: str) -> List[str]:
-    raw = os.environ.get(key, "").strip()
+    raw = _env(key)
     if not raw:
         return []
     return [x.strip() for x in raw.split("&") if x.strip()]
+
+
+def load_notify_from_env() -> NotifyConfig:
+    bark_url = _env("BARK_URL") or _env("BARK_PUSH")
+    bark_key = _env("BARK_KEY") or _env("BARK_DEVICE_KEY")
+    if bark_url and not bark_url.startswith("http"):
+        bark_key = bark_key or bark_url
+        bark_url = ""
+
+    return NotifyConfig(
+        bark_url=bark_url,
+        bark_key=bark_key,
+        bark_server=_env("BARK_SERVER", DEFAULT_BARK_SERVER).rstrip("/"),
+        bark_group=_env("BARK_GROUP", "望潮阅读有礼"),
+        bark_sound=_env("BARK_SOUND"),
+        bark_icon=_env("BARK_ICON"),
+        bark_level=_env("BARK_LEVEL"),
+        serverchan_key=_env("SERVERCHAN_KEY") or _env("PUSH_KEY"),
+        webhook_url=_env("WEBHOOK_URL"),
+    )
 
 
 def _account_from_dict(item: Dict[str, Any], index: int) -> Account:
@@ -251,19 +305,42 @@ def load_config(path: Optional[Path] = None) -> AppConfig:
     api = raw.get("api") or {}
     lottery = raw.get("lottery") or {}
     log = raw.get("log") or {}
+    n = raw.get("notify") or {}
 
     do_lottery = True
-    if os.environ.get("WANGCHAO_LOTTERY", "").strip() in ("0", "false", "False"):
+    if _env("WANGCHAO_LOTTERY") in ("0", "false", "False"):
         do_lottery = False
     elif "enable" in lottery:
         do_lottery = bool(lottery.get("enable"))
 
+    # 环境变量优先于 yaml（方便青龙统一配 BARK_*）
+    env_notify = load_notify_from_env()
+    notify = NotifyConfig(
+        bark_url=env_notify.bark_url or str(n.get("bark_url") or ""),
+        bark_key=env_notify.bark_key or str(n.get("bark_key") or ""),
+        bark_server=(
+            env_notify.bark_server
+            if env_notify.bark_key or env_notify.bark_url
+            else str(n.get("bark_server") or DEFAULT_BARK_SERVER)
+        ).rstrip("/"),
+        bark_group=(
+            env_notify.bark_group
+            if _env("BARK_GROUP")
+            else str(n.get("bark_group") or "望潮阅读有礼")
+        ),
+        bark_sound=env_notify.bark_sound or str(n.get("bark_sound") or ""),
+        bark_icon=env_notify.bark_icon or str(n.get("bark_icon") or ""),
+        bark_level=env_notify.bark_level or str(n.get("bark_level") or ""),
+        serverchan_key=env_notify.serverchan_key
+        or str(n.get("serverchan_key") or ""),
+        webhook_url=env_notify.webhook_url or str(n.get("webhook_url") or ""),
+    )
+
     return AppConfig(
         accounts=accounts,
+        notify=notify,
         base_url=str(
-            os.environ.get("WANGCHAO_BASE_URL")
-            or api.get("base_url")
-            or DEFAULT_BASE_URL
+            _env("WANGCHAO_BASE_URL") or api.get("base_url") or DEFAULT_BASE_URL
         ).rstrip("/"),
         vapp_url=str(api.get("vapp_url") or DEFAULT_VAPP_URL).rstrip("/"),
         passport_url=str(api.get("passport_url") or DEFAULT_PASSPORT_URL).rstrip(
@@ -277,9 +354,7 @@ def load_config(path: Optional[Path] = None) -> AppConfig:
         timeout=int(api.get("timeout") or 20),
         click_cooldown=float(api.get("click_cooldown") or 8),
         jitter=float(api.get("jitter") or 1.5),
-        log_level=str(
-            os.environ.get("WANGCHAO_LOG_LEVEL") or log.get("level") or "INFO"
-        ),
+        log_level=str(_env("WANGCHAO_LOG_LEVEL") or log.get("level") or "INFO"),
     )
 
 
@@ -849,6 +924,121 @@ class WangChaoClient:
 
 
 # ---------------------------------------------------------------------------
+# 通知：Bark 为主（与 hifiti 共用 BARK_* 环境变量）
+# ---------------------------------------------------------------------------
+
+
+def _build_bark_endpoint(cfg: NotifyConfig) -> Optional[str]:
+    if cfg.bark_url:
+        return cfg.bark_url.strip().rstrip("/")
+    if cfg.bark_key:
+        server = (cfg.bark_server or DEFAULT_BARK_SERVER).rstrip("/")
+        return f"{server}/{cfg.bark_key.strip()}"
+    return None
+
+
+def send_bark(cfg: NotifyConfig, title: str, body: str) -> None:
+    endpoint = _build_bark_endpoint(cfg)
+    if not endpoint:
+        return
+
+    payload: Dict[str, Any] = {
+        "title": title,
+        "body": body,
+        "group": cfg.bark_group or "望潮阅读有礼",
+    }
+    if cfg.bark_sound:
+        payload["sound"] = cfg.bark_sound
+    if cfg.bark_icon:
+        payload["icon"] = cfg.bark_icon
+    if cfg.bark_level:
+        payload["level"] = cfg.bark_level
+
+    try:
+        r = requests.post(endpoint, json=payload, timeout=15)
+        if r.status_code >= 400:
+            get_url = (
+                f"{endpoint.rstrip('/')}/"
+                f"{quote(title, safe='')}/"
+                f"{quote(body, safe='')}"
+            )
+            r = requests.get(get_url, timeout=15)
+        logger.info("Bark 通知: HTTP %s %s", r.status_code, r.text[:200])
+    except Exception as e:
+        logger.warning("Bark 通知失败: %s", e)
+
+
+def send_serverchan(key: str, title: str, content: str) -> None:
+    if key.startswith("sctp"):
+        url = f"https://sctapi.ftqq.com/{key}.send"
+    else:
+        url = f"https://sctapi.ftqq.com/{key}.send"
+    try:
+        r = requests.post(
+            url, json={"title": title, "desp": content}, timeout=10
+        )
+        logger.info("Server酱通知: %s", r.text[:200])
+    except Exception as e:
+        logger.warning("Server酱通知失败: %s", e)
+
+
+def send_notify(cfg: NotifyConfig, title: str, content: str) -> None:
+    if not cfg.enabled():
+        logger.info("未配置通知渠道，跳过推送")
+        return
+    if cfg.bark_url or cfg.bark_key:
+        send_bark(cfg, title, content)
+    if cfg.serverchan_key:
+        send_serverchan(cfg.serverchan_key, title, content)
+    if cfg.webhook_url:
+        try:
+            r = requests.post(
+                cfg.webhook_url,
+                json={"title": title, "content": content},
+                timeout=10,
+            )
+            logger.info("Webhook 通知: HTTP %s", r.status_code)
+        except Exception as e:
+            logger.warning("Webhook 通知失败: %s", e)
+
+
+def format_summary(results: List[Dict[str, Any]], dry_run: bool = False) -> str:
+    lines: List[str] = []
+    if dry_run:
+        lines.append("【dry-run】未实际上报/抽奖")
+    for r in results:
+        name = r.get("name") or "?"
+        ok = r.get("ok")
+        err = r.get("error") or ""
+        read = r.get("read") or {}
+        lot = r.get("lottery") or {}
+        status = "✅" if ok else "❌"
+        parts = [f"{status} [{name}]"]
+        if read:
+            parts.append(
+                f"阅读 {read.get('completed_after', '?')}/{read.get('total', '?')}"
+                f"（新完成 {read.get('marked', 0)}）"
+            )
+        if lot:
+            if lot.get("already"):
+                parts.append(f"抽奖: 今日已抽过（{lot.get('msg') or ''}）")
+            elif lot.get("ok"):
+                prize = lot.get("prize")
+                msg = lot.get("msg") or "成功"
+                parts.append(
+                    f"抽奖: {msg}" + (f" prize={prize}" if prize is not None else "")
+                )
+            else:
+                parts.append(f"抽奖失败: {lot.get('msg') or lot.get('code')}")
+        if err:
+            parts.append(f"错误: {err}")
+        lines.append(" · ".join(parts) if len(parts) > 1 else parts[0])
+    ok_n = sum(1 for r in results if r.get("ok"))
+    lines.append(f"合计: {ok_n}/{len(results)} 成功")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
 
@@ -974,6 +1164,18 @@ def main(argv: Optional[List[str]] = None) -> int:
             (lot or {}).get("msg") if lot else "-",
             r.get("error") or "",
         )
+
+    summary = format_summary(results, dry_run=args.dry_run)
+    title = (
+        f"望潮阅读有礼 {'成功' if ok_n == len(results) else '部分失败'}"
+        f" ({ok_n}/{len(results)})"
+    )
+    # dry-run 默认不推送，避免调试刷屏；可用 WANGCHAO_NOTIFY_DRY_RUN=1 强制推
+    if args.dry_run and _env("WANGCHAO_NOTIFY_DRY_RUN") not in ("1", "true", "True"):
+        logger.info("dry-run 跳过通知（设 WANGCHAO_NOTIFY_DRY_RUN=1 可推送）")
+    else:
+        send_notify(cfg.notify, title, summary)
+
     return 0 if ok_n == len(results) else 1
 
 

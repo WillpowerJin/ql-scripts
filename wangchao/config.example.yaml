@@ -27,5 +27,20 @@ lottery:
   base_url: "https://srv-app.taizhou.com.cn"
   activity_id: 67
 
+# 通知（青龙更推荐用环境变量 BARK_URL / BARK_KEY，与 hifiti 共用）
+notify:
+  # Bark：二选一
+  # 完整 URL（App 里复制），如 https://api.day.app/xxxxxxxx/
+  bark_url: ""
+  # 或只填 key
+  bark_key: ""
+  bark_server: "https://api.day.app"
+  bark_group: "望潮阅读有礼"
+  # bark_sound: "bell"
+  # bark_icon: "https://example.com/icon.png"
+  # bark_level: "active"
+  # serverchan_key: ""
+  # webhook_url: ""
+
 log:
   level: "INFO"
