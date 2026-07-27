@@ -381,6 +381,17 @@ def setup_logging(level: str) -> None:
     )
 
 
+def _mask_phone(phone: str) -> str:
+    p = (phone or "").strip()
+    if len(p) >= 7:
+        return f"{p[:3]}****{p[-4:]}"
+    return p or "—"
+
+
+def log_banner(title: str) -> None:
+    logger.info("──────── %s ────────", title)
+
+
 # ---------------------------------------------------------------------------
 # 加解密 / 签名
 # ---------------------------------------------------------------------------
@@ -505,7 +516,11 @@ class WangChaoClient:
                 if not sid:
                     raise RuntimeError(f"init 未返回 session.id: {data}")
                 self.vapp_session_id = sid
-                logger.info("[%s] 匿名 session=%s", self.account.name, sid)
+                logger.info(
+                    "[%s] 🔑 设备会话就绪 session=%s…",
+                    self.account.name,
+                    sid[:12],
+                )
                 return sid
 
             msg = str(data.get("message") or data.get("msg") or "")
@@ -515,10 +530,9 @@ class WangChaoClient:
                 # 15s, 25s, 35s… 加一点抖动
                 wait = 10 + attempt * 10 + random.uniform(0, 3)
                 logger.warning(
-                    "[%s] init 限流 code=%s %s，%.0f 秒后重试 (%s/%s)",
+                    "[%s] ⏳ 操作频繁（%s），%.0f 秒后重试（%s/%s）",
                     self.account.name,
-                    code,
-                    msg,
+                    msg or code,
                     wait,
                     attempt,
                     max_retries,
@@ -556,7 +570,11 @@ class WangChaoClient:
             "password": enc_pwd,
             "phone_number": phone,
         }
-        logger.info("[%s] passport 登录 phone=%s …", self.account.name, phone)
+        logger.info(
+            "[%s] 📱 账号登录 %s …",
+            self.account.name,
+            _mask_phone(phone),
+        )
         resp = self.session.post(
             auth_url, headers=headers, data=form, timeout=self.cfg.timeout
         )
@@ -600,9 +618,13 @@ class WangChaoClient:
         self.vapp_session_id = session_id
         nick = (payload.get("account") or {}).get("nick_name") or ""
         logger.info(
-            "[%s] 密码登录成功 nick=%s account_id=%s session_id=%s…",
+            "[%s] ✅ 登录成功 昵称=%s",
             self.account.name,
-            nick,
+            nick or "—",
+        )
+        logger.debug(
+            "[%s] account_id=%s session_id=%s…",
+            self.account.name,
             account_id,
             session_id[:12],
         )
@@ -616,9 +638,9 @@ class WangChaoClient:
         if self.account.has_session():
             self.vapp_session_id = self.account.session_id
             logger.info(
-                "[%s] 使用配置的 session account_id=%s",
+                "[%s] 🔐 使用已配置 session（account_id=%s…）",
                 self.account.name,
-                self.account.account_id,
+                str(self.account.account_id)[:12],
             )
             return
         raise ValueError("账号未配置 phone/password 或 account_id/session_id")
@@ -638,28 +660,34 @@ class WangChaoClient:
             "Referer": f"{self.cfg.base_url}/readingLuck-v5/",
             "X-Requested-With": "com.shangc.tiennews.taizhou",
         }
-        logger.info("[%s] 登录阅读有礼 …", self.account.name)
+        logger.info("[%s] 📖 进入阅读有礼 …", self.account.name)
         resp = self.session.get(
             url, params=params, headers=headers, timeout=self.cfg.timeout
         )
         data = self._parse(resp)
         if str(data.get("code")) == "200":
             self.userinfo = data.get("data") or {}
-            logger.info(
-                "[%s] 阅读有礼登录成功 name=%s needYz=%s cookies=%s",
+            uname = self.userinfo.get("name") or self.userinfo.get("nickName") or "—"
+            logger.info("[%s] ✅ 阅读有礼就绪（%s）", self.account.name, uname)
+            logger.debug(
+                "[%s] needYz=%s cookies=%s",
                 self.account.name,
-                self.userinfo.get("name"),
                 self.userinfo.get("needYz"),
                 list(self.session.cookies.keys()),
             )
             if self.userinfo.get("needYz"):
                 logger.warning(
-                    "[%s] needYz=true，请先在 App 内完成验证码",
+                    "[%s] ⚠️ 需要人机验证（needYz），请先在 App 内完成",
                     self.account.name,
                 )
             return True
         msg = data.get("msg") or data.get("message") or resp.text[:200]
-        logger.error("[%s] 阅读有礼登录失败 code=%s %s", self.account.name, data.get("code"), msg)
+        logger.error(
+            "[%s] ❌ 阅读有礼登录失败 code=%s %s",
+            self.account.name,
+            data.get("code"),
+            msg,
+        )
         return False
 
     @staticmethod
@@ -678,16 +706,24 @@ class WangChaoClient:
         data = self._parse(resp)
         if str(data.get("code")) == "200":
             task = data.get("data") or {}
+            total = task.get("sum")
+            done = task.get("completedCount")
+            try:
+                full = int(done) >= int(total)
+            except (TypeError, ValueError):
+                full = False
+            flag = "✅" if full else "📌"
             logger.info(
-                "[%s] 任务 %s 总计=%s 已完成=%s",
+                "[%s] %s 今日任务 %s/%s（%s）",
                 self.account.name,
+                flag,
+                done,
+                total,
                 day,
-                task.get("sum"),
-                task.get("completedCount"),
             )
             return task
         logger.error(
-            "[%s] 获取任务失败: %s",
+            "[%s] ❌ 获取任务失败: %s",
             self.account.name,
             data.get("msg") or data.get("message") or data,
         )
@@ -714,7 +750,11 @@ class WangChaoClient:
                 ((data.get("data") or {}).get("article") or {}).get("list_title")
                 or ""
             )
-            logger.info("[%s] 打开文章 newsId=%s %s", self.account.name, news_id, title)
+            logger.info(
+                "[%s] 📰 打开《%s》",
+                self.account.name,
+                title or news_id,
+            )
         else:
             logger.debug(
                 "[%s] 文章详情跳过/失败 newsId=%s %s",
@@ -756,10 +796,10 @@ class WangChaoClient:
             data = self._parse(resp)
 
         if str(data.get("code")) == "200":
-            logger.info("[%s] 已读成功 articleId=%s", self.account.name, article_id)
+            logger.info("[%s] ✅ 已读上报成功", self.account.name)
             return True
         logger.warning(
-            "[%s] 已读失败 articleId=%s code=%s msg=%s",
+            "[%s] ❌ 已读失败 id=%s code=%s %s",
             self.account.name,
             article_id,
             data.get("code"),
@@ -790,26 +830,32 @@ class WangChaoClient:
         result["completed_before"] = completed
 
         pending = [a for a in articles if not a.get("isRead")]
-        logger.info(
-            "[%s] 待完成 %s 篇 / 列表 %s",
-            self.account.name,
-            len(pending),
-            len(articles),
-        )
-
         if not pending:
+            logger.info(
+                "[%s] ✨ 无需再读（%s/%s 已完成）",
+                self.account.name,
+                completed,
+                total,
+            )
             result["ok"] = completed >= total
             result["completed_after"] = completed
             result["skipped"] = len(articles)
             return result
 
+        logger.info(
+            "[%s] 📚 待阅读 %s 篇（进度 %s/%s）",
+            self.account.name,
+            len(pending),
+            completed,
+            total,
+        )
+
         if dry_run:
             for a in pending:
                 logger.info(
-                    "[dry-run] articleId=%s newsId=%s title=%s",
-                    a.get("id"),
-                    a.get("newsId") or a.get("news_id"),
-                    a.get("title") or a.get("list_title") or "",
+                    "[%s] 🧪 dry-run 将读：《%s》",
+                    self.account.name,
+                    a.get("title") or a.get("list_title") or a.get("id"),
                 )
             result["ok"] = True
             result["skipped"] = len(pending)
@@ -821,12 +867,11 @@ class WangChaoClient:
             news_id = article.get("newsId") or article.get("news_id")
             title = article.get("title") or article.get("list_title") or ""
             logger.info(
-                "[%s] (%s/%s) %s id=%s",
+                "[%s] 👉 (%s/%s) 《%s》",
                 self.account.name,
                 idx,
                 len(pending),
-                title,
-                aid,
+                title or aid,
             )
             if aid is None:
                 result["failed"] += 1
@@ -889,7 +934,7 @@ class WangChaoClient:
         data = self._parse(resp)
         if str(data.get("code")) != "200":
             msg = data.get("message") or data.get("msg") or data
-            logger.error("[%s] 抽奖站登录失败: %s", self.account.name, msg)
+            logger.error("[%s] ❌ 抽奖站登录失败: %s", self.account.name, msg)
             return {"ok": False, "msg": str(msg), "already": False}
 
         body = data.get("data")
@@ -926,15 +971,27 @@ class WangChaoClient:
         ok = str(code) == "200" or already
 
         if str(code) == "200":
-            logger.info("[%s] 抽奖成功 prize=%s msg=%s", self.account.name, prize, msg)
+            if "谢谢" in msg:
+                logger.info("[%s] 🎁 抽奖结果：谢谢参与 🙏", self.account.name)
+            elif "元" in msg or "红包" in msg:
+                logger.info("[%s] 🎁 抽奖结果：🎉 %s", self.account.name, msg)
+            else:
+                logger.info(
+                    "[%s] 🎁 抽奖成功：%s",
+                    self.account.name,
+                    msg or (f"prize={prize}" if prize is not None else "完成"),
+                )
         elif already:
-            logger.info("[%s] 今日已抽过: %s", self.account.name, msg)
+            logger.info("[%s] 🎁 今日已抽过，明天再来", self.account.name)
         else:
-            logger.warning("[%s] 抽奖 code=%s msg=%s", self.account.name, code, msg)
+            logger.warning(
+                "[%s] ❌ 抽奖失败：%s",
+                self.account.name,
+                msg or code,
+            )
             if "重新打开" in msg or "APP" in msg:
                 logger.warning(
-                    "[%s] 若仍提示打开 APP，可能是活动页强校验滑块验证，"
-                    "请在 App 内手动抽一次，或等待接口策略变化",
+                    "[%s] 💡 若持续提示打开 APP，可能需在 App 内完成滑块后再试",
                     self.account.name,
                 )
 
@@ -952,12 +1009,14 @@ class WangChaoClient:
             )
             hdata = self._parse(hist)
             records = ((hdata.get("data") or {}).get("records")) or []
-            for rec in records[:5]:
-                logger.info(
-                    "  记录 %s %s",
-                    rec.get("createTime"),
-                    rec.get("awardName") or rec.get("prizeName"),
-                )
+            if records:
+                logger.info("[%s] 📜 近期抽奖记录：", self.account.name)
+                for rec in records[:5]:
+                    logger.info(
+                        "     · %s  %s",
+                        rec.get("createTime") or "—",
+                        rec.get("awardName") or rec.get("prizeName") or "—",
+                    )
         except Exception:
             pass
 
@@ -1010,9 +1069,10 @@ def send_bark(cfg: NotifyConfig, title: str, body: str) -> None:
                 f"{quote(body, safe='')}"
             )
             r = requests.get(get_url, timeout=15)
-        logger.info("Bark 通知: HTTP %s %s", r.status_code, r.text[:200])
+        logger.info("📣 Bark 已推送（HTTP %s）", r.status_code)
+        logger.debug("Bark 响应: %s", r.text[:200])
     except Exception as e:
-        logger.warning("Bark 通知失败: %s", e)
+        logger.warning("📣 Bark 推送失败: %s", e)
 
 
 def send_serverchan(key: str, title: str, content: str) -> None:
@@ -1031,7 +1091,7 @@ def send_serverchan(key: str, title: str, content: str) -> None:
 
 def send_notify(cfg: NotifyConfig, title: str, content: str) -> None:
     if not cfg.enabled():
-        logger.info("未配置通知渠道，跳过推送")
+        logger.info("📣 未配置 Bark/通知渠道，跳过推送")
         return
     if cfg.bark_url or cfg.bark_key:
         send_bark(cfg, title, content)
@@ -1167,9 +1227,10 @@ def run_account(account: Account, cfg: AppConfig, dry_run: bool) -> Dict[str, An
     }
     if not account.ready():
         out["error"] = "请配置 phone+password 或 account_id+session_id"
-        logger.error("[%s] %s", account.name, out["error"])
+        logger.error("[%s] ❌ %s", account.name, out["error"])
         return out
 
+    log_banner(f"👤 {account.name}")
     client = WangChaoClient(account, cfg)
     try:
         client.ensure_credentials()
@@ -1190,18 +1251,30 @@ def run_account(account: Account, cfg: AppConfig, dry_run: bool) -> Dict[str, An
             and int(read_result.get("completed_after") or 0)
             >= int(read_result.get("total") or 12)
         ):
-            logger.info("[%s] 阅读已满，抽奖 …", account.name)
+            logger.info("[%s] 🎯 阅读已满，开始抽奖 …", account.name)
             out["lottery"] = client.lottery_draw()
         elif cfg.do_lottery and not dry_run and not read_result.get("ok"):
-            logger.info("[%s] 未完成全部阅读，跳过抽奖", account.name)
+            logger.info(
+                "[%s] ⏸️ 未读满（%s/%s），跳过抽奖",
+                account.name,
+                read_result.get("completed_after"),
+                read_result.get("total"),
+            )
 
         out["ok"] = bool(read_result.get("ok"))
+        # 单账号收尾一行
+        if out["ok"]:
+            logger.info("[%s] 💚 本号流程结束", account.name)
+        else:
+            logger.warning("[%s] 💔 本号未完全成功", account.name)
     except requests.RequestException as e:
         out["error"] = str(e)
-        logger.exception("[%s] 网络错误: %s", account.name, e)
+        logger.error("[%s] 🌐 网络错误: %s", account.name, e)
+        logger.debug("network traceback", exc_info=True)
     except Exception as e:
         out["error"] = str(e)
-        logger.exception("[%s] 异常: %s", account.name, e)
+        logger.error("[%s] 💥 异常: %s", account.name, e)
+        logger.debug("exception traceback", exc_info=True)
     return out
 
 
@@ -1231,11 +1304,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         cfg.do_lottery = False
 
     setup_logging(cfg.log_level)
+    logger.info("🌊 望潮 · 阅读有礼")
     logger.info(
-        "望潮阅读有礼 | 账号=%s dry_run=%s lottery=%s",
+        "   账号 %s 个 · 抽奖 %s · dry-run %s",
         len(cfg.accounts),
-        args.dry_run,
-        cfg.do_lottery and not args.dry_run,
+        "开" if (cfg.do_lottery and not args.dry_run) else "关",
+        "是" if args.dry_run else "否",
     )
 
     results = []
@@ -1243,16 +1317,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     for idx, acc in enumerate(cfg.accounts):
         if idx > 0 and cfg.account_interval > 0:
             wait = cfg.account_interval + random.uniform(0, 3)
+            logger.info("")
             logger.info(
-                "多账号间隔 %.0f 秒后再跑 [%s]（%s/%s）…",
+                "💤 休息 %.0f 秒后继续（%s/%s）→ %s",
                 wait,
-                acc.name,
                 idx + 1,
                 n_acc,
+                acc.name,
             )
             time.sleep(wait)
 
         if args.lottery_only:
+            log_banner(f"👤 {acc.name}（仅抽奖）")
             client = WangChaoClient(acc, cfg)
             try:
                 client.ensure_credentials()
@@ -1271,33 +1347,24 @@ def main(argv: Optional[List[str]] = None) -> int:
                     }
                 )
             except Exception as e:
-                logger.exception("[%s] 异常: %s", acc.name, e)
+                logger.error("[%s] 💥 异常: %s", acc.name, e)
+                logger.debug("exception traceback", exc_info=True)
                 results.append({"name": acc.name, "ok": False, "error": str(e)})
         else:
             results.append(run_account(acc, cfg, dry_run=args.dry_run))
 
     ok_n = sum(1 for r in results if r.get("ok"))
-    logger.info("完成: %s/%s 成功", ok_n, len(results))
-    for r in results:
-        read = r.get("read") or {}
-        lot = r.get("lottery")
-        logger.info(
-            "  - %s ok=%s read=%s/%s marked=%s lottery=%s err=%s",
-            r.get("name"),
-            r.get("ok"),
-            read.get("completed_after"),
-            read.get("total"),
-            read.get("marked"),
-            (lot or {}).get("msg") if lot else "-",
-            r.get("error") or "",
-        )
-
     summary = format_summary(results, dry_run=args.dry_run)
     title = format_notify_title(results)
-    logger.info("通知摘要:\n%s", summary)
+
+    logger.info("")
+    log_banner("执行结果")
+    for line in summary.splitlines():
+        logger.info("%s", line)
+
     # dry-run 默认不推送，避免调试刷屏；可用 WANGCHAO_NOTIFY_DRY_RUN=1 强制推
     if args.dry_run and _env("WANGCHAO_NOTIFY_DRY_RUN") not in ("1", "true", "True"):
-        logger.info("dry-run 跳过通知（设 WANGCHAO_NOTIFY_DRY_RUN=1 可推送）")
+        logger.info("🧪 dry-run 已跳过推送（设 WANGCHAO_NOTIFY_DRY_RUN=1 可推送）")
     else:
         send_notify(cfg.notify, title, summary)
 
