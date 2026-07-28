@@ -179,18 +179,36 @@ https://raw.githubusercontent.com/WillpowerJin/ql-scripts/main/xijiu/quantumultx
 
 ## 青龙
 
+**定时任务**（脚本头已写，订阅拉取后自动带上）：
+
+```text
+0 */2 * * *
+```
+
+每 2 小时执行一次。若你之前已手动改过定时，重新拉库后可能仍沿用旧定时，可在青龙任务里改成上面这条，或删任务后重新订阅生成。
+
+**订阅说明：** 仓库根 README 的黑名单已排除 `pull_access_token`（本地 root 安卓抠 token 用，青龙不需要）。完整订阅命令见 [根目录 README](../README.md#青龙订阅)。
+
 **环境变量（账号）：**
 
 ```text
-XIJIU_ACCOUNTS = [{"name":"主号","login_code":"xxx","access_token":"yyy"}]
+XIJIU_ACCOUNTS=[{"name":"主号","login_code":"eyJ...","access_token":"xxx"},{"name":"iPhone","login_code":"eyJ...","access_token":"yyy"}]
 ```
 
-或：
+要求：
+
+- 必须是 **JSON 数组**（以 `[` 开头、`]` 结尾）
+- 键名用 **英文双引号**，不要中文引号 `“”`
+- **不要**把 `config.yaml` 整份贴进 `XIJIU_ACCOUNTS`（那是 yaml，不是 JSON）
+- 多个账号对象之间用 **英文逗号** `,`
+- 青龙若报 `Expecting value: line …`：就是这个变量 JSON 写坏了，按上面重写
+
+或拆字段（更不容易写错）：
 
 ```text
 XIJIU_LOGIN_CODE = code1&code2
 XIJIU_ACCESS_TOKEN = token1&token2
-XIJIU_NAME = 主号&备号
+XIJIU_NAME = 主号&iPhone
 ```
 
 **可选：**

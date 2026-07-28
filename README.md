@@ -25,12 +25,13 @@
 | 链接 | `https://github.com/WillpowerJin/ql-scripts.git` |
 | 分支 | `main` |
 | **白名单** | `checkin\|read_gift\|xijiu` |
-| **黑名单** | `README\|config\|example\|requirements\|\.md\|\.yaml\|\.yml\|\.txt` |
+| **黑名单** | `README\|config\|example\|requirements\|pull_access_token\|\.md\|\.yaml\|\.yml\|\.txt` |
 | 扩展名 | `py` |
 | 定时规则 | 按需，例如 `30 8 * * *`（仅自动拉库，不是跑任务） |
 
 > **白名单**需包含 `read_gift`、`xijiu` 等关键字，否则对应子目录不会被拉。  
-> 白名单匹配的是**路径里是否包含关键字**，多个用 `\|` 分隔。
+> 白名单匹配的是**路径里是否包含关键字**，多个用 `\|` 分隔。  
+> **黑名单**含 `pull_access_token`：该文件只给本地 root 安卓抠 token 用，青龙不需要。
 
 ### 已有订阅（只点「运行」不够）
 
@@ -38,14 +39,15 @@
 
 1. 打开该订阅 → **编辑**
 2. 把白名单改成：`checkin|read_gift|xijiu`
-3. **保存**后再点运行
+3. 黑名单补上 `pull_access_token`（与下文一致）
+4. **保存**后再点运行
 
 只点「运行」会沿用旧参数，**不会**自动读本仓库 README，也**不会**自动加上新脚本。
 
 ### 命令行等价写法
 
 ```bash
-ql repo https://github.com/WillpowerJin/ql-scripts.git "checkin|read_gift|xijiu" "README|config|example|requirements|\.md|\.yaml|\.yml|\.txt" "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "checkin|read_gift|xijiu" "README|config|example|requirements|pull_access_token|\.md|\.yaml|\.yml|\.txt" "" "main" "py"
 ```
 
 参数含义：
@@ -54,7 +56,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "checkin|read_gift|xijiu"
 |------|------|------------|
 | 1 | 仓库地址 | 见上 |
 | 2 | 白名单（路径包含即拉取） | `checkin\|read_gift\|xijiu` |
-| 3 | 黑名单（路径包含则跳过） | 文档/配置等 |
+| 3 | 黑名单（路径包含则跳过） | 文档/配置 + `pull_access_token` |
 | 4 | 依赖文件 | 空 |
 | 5 | 分支 | `main` |
 | 6 | 扩展名 | `py` |
@@ -66,6 +68,8 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "checkin|read_gift|xijiu"
 …/wangchao/read_gift.py
 …/xijiu/daily.py
 ```
+
+（不应出现 `pull_access_token.py`。）
 
 账号、Cookie、密码、Bark 等**不要写进仓库**，在青龙「环境变量」中配置。  
 Bark 与各脚本共用：`BARK_URL` 或 `BARK_KEY`（见 [hifiti](./hifiti/README.md)、[wangchao](./wangchao/README.md)）。

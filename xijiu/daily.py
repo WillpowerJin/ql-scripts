@@ -3,7 +3,7 @@
 """
 习酒 · 君品荟 微信小程序自动任务
 
-cron: 20 8 * * *
+cron: 0 */2 * * *
 new Env('习酒君品荟');
 
 功能：
@@ -287,14 +287,54 @@ def load_notify_from_env() -> NotifyConfig:
     )
 
 
+def _parse_accounts_json(raw: str) -> list[Any]:
+    """
+    解析 XIJIU_ACCOUNTS。青龙常见踩坑：
+    - 粘贴了 yaml / 多行说明而不是 JSON 数组
+    - 包了 ```json 代码块
+    - 中文引号、尾逗号、少括号
+    """
+    s = (raw or "").strip()
+    # UTF-8 BOM
+    if s.startswith("\ufeff"):
+        s = s.lstrip("\ufeff")
+    # 去掉 markdown 代码围栏
+    if s.startswith("```"):
+        lines = s.splitlines()
+        # 去掉首行 ```json 和末行 ```
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        s = "\n".join(lines).strip()
+    try:
+        data = json.loads(s)
+    except json.JSONDecodeError as e:
+        preview = s[:120].replace("\n", "\\n")
+        raise ValueError(
+            "XIJIU_ACCOUNTS / XiJiu 不是合法 JSON（"
+            f"{e.msg}  at line {e.lineno} col {e.colno}）。\n"
+            "青龙里该变量必须是【一行或标准 JSON 数组】，例如：\n"
+            '[{"name":"主号","login_code":"eyJ...","access_token":"xxx"},'
+            '{"name":"iPhone","login_code":"eyJ...","access_token":"yyy"}]\n'
+            "不要贴 yaml、不要中文引号、账号对象之间用英文逗号。\n"
+            f"当前内容开头: {preview!r}…"
+        ) from e
+    if not isinstance(data, list):
+        raise ValueError("XIJIU_ACCOUNTS 必须是 JSON 数组，例如 [{...},{...}]")
+    return data
+
+
 def load_config_from_env() -> Optional[AppConfig]:
     accounts: list[Account] = []
     raw = _env("XIJIU_ACCOUNTS") or _env("XiJiu")
     if raw:
-        data = json.loads(raw)
-        if not isinstance(data, list):
-            raise ValueError("XIJIU_ACCOUNTS 必须是 JSON 数组")
+        data = _parse_accounts_json(raw)
         for i, item in enumerate(data):
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"XIJIU_ACCOUNTS[{i}] 必须是对象，实际是 {type(item).__name__}"
+                )
             acc = Account(
                 name=str(item.get("name") or item.get("id") or f"account_{i + 1}"),
                 login_code=str(
