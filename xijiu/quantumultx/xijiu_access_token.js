@@ -1,25 +1,34 @@
 /*
  * 习酒 · 君品荟 —— Quantumult X 自动抓 access_token
  *
- * 作用：命中 fm.exijiu.com 且请求头带 X-access-token 时：
- *   1) 完整 token 写入本地键值 xijiu_access_token（可随时用 show 脚本再读）
- *   2) console 日志打印完整 token + 可粘贴 YAML
- *   3) 系统通知正文里放完整 token（长按通知可复制）
- *   4) 可选 Bark（带 autoCopy）/ webhook
+ * 为何会「连弹很多条一样的通知」？
+ *   签到页会对 fm.exijiu.com 同时发多路请求，每条都带同一个 X-access-token。
+ *   并发时多个脚本实例都读到「旧缓存为空/旧值」，都以为 token 变了 → 连弹。
  *
- * 配置片段：xijiu_access_token.snippet.conf
+ * 本版处理：
+ *   1) 建议 rewrite 只匹配签到相关路径（见 snippet，减少触发次数）
+ *   2) 防抖：同一 token 在 DEBOUNCE_MS 内只通知 / Bark / webhook 一次
+ *   3) 未变化且在防抖窗内：静默写缓存，不刷屏
  *
- * 本地键值（可选，$prefs.setValueForKey("值","键")）：
- *   xijiu_account_name   账号名，默认 iPhone（通知标题用）
- *   xijiu_notify_always  填 1 时 token 未变也通知（默认仅变化时通知）
+ * 本地键值（可选）：
+ *   xijiu_account_name   默认 iPhone
+ *   xijiu_notify_always  1 = 防抖窗外也强制通知（仍防抖）
  *   xijiu_bark_url / xijiu_bark_key
  *   xijiu_webhook_url / xijiu_webhook_token
  */
 (function () {
+  // 同一 token 两分钟内只弹一次通知
+  const DEBOUNCE_MS = 120 * 1000;
+
   const KEY_TOKEN = "xijiu_access_token";
   const KEY_TS = "xijiu_access_token_ts";
   const KEY_UA = "xijiu_access_token_ua";
   const KEY_YAML = "xijiu_access_token_yaml";
+  // 防抖：上次「已发通知」的 token + 时间
+  const KEY_NOTIFIED_TOKEN = "xijiu_access_token_notified";
+  const KEY_NOTIFIED_TS = "xijiu_access_token_notified_ts";
+  // 抢占锁：毫秒时间戳，避免并发双发
+  const KEY_LOCK = "xijiu_access_token_lock";
 
   const req = typeof $request !== "undefined" ? $request : {};
   const headers = req.headers || {};
@@ -41,6 +50,12 @@
     return String(v);
   }
 
+  function setPref(key, val) {
+    try {
+      $prefs.setValueForKey(String(val), key);
+    } catch (e) {}
+  }
+
   function fmt(ts) {
     const d = new Date(ts);
     const pad = (n) => (n < 10 ? "0" + n : "" + n);
@@ -59,16 +74,13 @@
     );
   }
 
-  /** 拼成 config.yaml 可直接粘贴的一行 */
   function yamlLine(token) {
-    // 双引号包裹，内部 " 极少出现；若有则简单转义
     const safe = String(token).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     return 'access_token: "' + safe + '"';
   }
 
-  /** 通知 / 日志用的完整正文（方便复制） */
   function copyBody(name, token, when, changed) {
-    const lines = [
+    return [
       "账号: " + name,
       "时间: " + when,
       "长度: " + token.length,
@@ -79,68 +91,96 @@
       "",
       "—— 粘贴到 config.yaml（该账号下）——",
       yamlLine(token),
-    ];
-    return lines.join("\n");
+      "",
+      "（同一 token 2 分钟内只通知一次，避免刷屏）",
+    ].join("\n");
   }
 
   const token = pickHeader(headers, "X-access-token").trim();
   const ua = pickHeader(headers, "User-Agent");
+  const url = req.url || "";
 
   if (!token || token.length < 20) {
     $done({});
     return;
   }
 
+  const now = Date.now();
   const oldToken = pref(KEY_TOKEN, "");
   const changed = token !== oldToken;
-  const notifyAlways = pref("xijiu_notify_always", "") === "1";
   const name = pref("xijiu_account_name", "iPhone");
-  const now = Date.now();
   const when = fmt(now);
   const yml = yamlLine(token);
+
+  // 始终更新缓存（静默），方便 show 脚本随时复制
+  setPref(KEY_TOKEN, token);
+  setPref(KEY_TS, now);
+  setPref(KEY_YAML, yml);
+  if (ua) setPref(KEY_UA, ua);
+
+  // —— 防抖 / 并发锁 ——
+  const lastNotifiedToken = pref(KEY_NOTIFIED_TOKEN, "");
+  const lastNotifiedTs = Number(pref(KEY_NOTIFIED_TS, "0")) || 0;
+  const withinDebounce =
+    lastNotifiedToken === token && now - lastNotifiedTs < DEBOUNCE_MS;
+
+  const lockTs = Number(pref(KEY_LOCK, "0")) || 0;
+  // 3 秒内已有实例在处理通知 → 本实例只缓存
+  const locked = lockTs > 0 && now - lockTs < 3000;
+
+  const notifyAlways = pref("xijiu_notify_always", "") === "1";
+
+  // 默认：token 变了才通知；notify_always 时只要不在防抖窗也可通知
+  let shouldNotify = changed || notifyAlways;
+  if (withinDebounce || locked) {
+    shouldNotify = false;
+  }
+
+  if (!shouldNotify) {
+    // 精简日志，避免签到页十几条请求刷爆日志
+    console.log(
+      "[xijiu] skip notify | changed=" +
+        changed +
+        " debounce=" +
+        withinDebounce +
+        " lock=" +
+        locked +
+        " len=" +
+        token.length
+    );
+    $done({});
+    return;
+  }
+
+  // 先占锁 + 记防抖，尽量挡住并发兄弟实例
+  setPref(KEY_LOCK, now);
+  setPref(KEY_NOTIFIED_TOKEN, token);
+  setPref(KEY_NOTIFIED_TS, now);
+
   const body = copyBody(name, token, when, changed);
 
-  // 始终写入本地（即使未变也刷新时间戳可选：仅变化时写）
-  $prefs.setValueForKey(token, KEY_TOKEN);
-  $prefs.setValueForKey(String(now), KEY_TS);
-  $prefs.setValueForKey(yml, KEY_YAML);
-  if (ua) $prefs.setValueForKey(ua, KEY_UA);
-
-  // —— 日志：Quantumult X → 首页 → 工具 → 日志 / 脚本日志 ——
-  // 完整 token 一定打出来，方便从日志里复制
-  console.log("[xijiu] ========== access_token ==========");
+  console.log("[xijiu] ========== access_token（通知 1 次）==========");
   console.log("[xijiu] account=" + name);
   console.log("[xijiu] time=" + when);
   console.log("[xijiu] len=" + token.length + " changed=" + changed);
   console.log("[xijiu] token=" + token);
   console.log("[xijiu] yaml=" + yml);
-  console.log("[xijiu] url=" + (req.url || ""));
-  console.log("[xijiu] ==================================");
+  console.log("[xijiu] url=" + url);
+  console.log("[xijiu] ==============================================");
 
-  if (!changed && !notifyAlways) {
-    // 未变化：只写日志，不弹通知（避免刷屏）
-    console.log("[xijiu] token 未变化，跳过通知（设 xijiu_notify_always=1 可强制通知）");
-    $done({});
-    return;
-  }
-
-  // —— 系统通知：正文 = 完整 token + yaml 行，长按通知「拷贝」——
   $notify(
     "习酒 access_token · " + name,
     (changed ? "已更新 · " : "未变化 · ") + when + " · " + token.length + "字",
     body
   );
 
-  // —— 可选 Bark：copy 参数便于一键复制 ——
   const barkUrl = pref("xijiu_bark_url", "");
   const barkKey = pref("xijiu_bark_key", "");
   const barkBase = barkUrl || (barkKey ? "https://api.day.app/" + barkKey : "");
   if (barkBase) {
-    // POST JSON 比 URL 长度限制更稳，完整 token 不易被截断
-    const endpoint = barkBase.replace(/\/$/, "");
     $task
       .fetch({
-        url: endpoint,
+        url: barkBase.replace(/\/$/, ""),
         method: "POST",
         headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({
@@ -153,12 +193,11 @@
         }),
       })
       .then(
-        () => console.log("[xijiu] Bark 已推送"),
-        (e) => console.log("[xijiu] Bark 失败: " + e)
+        () => console.log("[xijiu] Bark ok"),
+        (e) => console.log("[xijiu] Bark fail " + e)
       );
   }
 
-  // —— 可选 webhook ——
   const hookUrl = pref("xijiu_webhook_url", "");
   if (hookUrl) {
     const hookToken = pref("xijiu_webhook_token", "");
@@ -179,8 +218,8 @@
         }),
       })
       .then(
-        () => console.log("[xijiu] webhook 已推送"),
-        (e) => console.log("[xijiu] webhook 失败: " + e)
+        () => console.log("[xijiu] webhook ok"),
+        (e) => console.log("[xijiu] webhook fail " + e)
       );
   }
 

@@ -115,14 +115,17 @@ python pull_access_token.py --list   # 看 MMKV 里扫到几条
 1. Quantumult X → **重写** → 编辑，加入（或导入 snippet）：
    ```
    [rewrite_local]
-   ^https?:\/\/fm\.exijiu\.com\/ url script-request-header https://raw.githubusercontent.com/WillpowerJin/ql-scripts/main/xijiu/quantumultx/xijiu_access_token.js
+   # 只匹配签到 API，避免整站请求连弹通知
+   ^https?:\/\/fm\.exijiu\.com\/api\/customer\/daily\/ url script-request-header https://raw.githubusercontent.com/WillpowerJin/ql-scripts/main/xijiu/quantumultx/xijiu_access_token.js
 
    [mitm]
    hostname = fm.exijiu.com
    ```
-   （`hostname` 只**追加**，不要覆盖你原来的整行。）
+   （`hostname` 只**追加**，不要覆盖你原来的整行。）  
+   **若你以前配的是** `fm.exijiu.com/` **整站规则，请改成上面这一行**，否则签到页会连触发十几次。
 2. **MitM** 生成证书 → iOS 安装描述文件 → **关于本机 → 证书信任设置** 打开信任。
-3. 微信 → **习酒君品荟 → 签到页**（触发请求）。
+3. 微信 → **习酒君品荟 → 签到页**（触发请求）。  
+   同一 token **2 分钟内只弹 1 次通知**（脚本防抖）；内容相同是正常的，更新脚本后不应再刷屏。
 
 **复制 token 的三种方式（任选）：**
 
