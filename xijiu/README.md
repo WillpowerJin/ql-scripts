@@ -112,28 +112,29 @@ python pull_access_token.py --list   # 看 MMKV 里扫到几条
 
 **配置步骤：**
 
-1. Quantumult X → **重写** → 编辑，加入（或导入 snippet）：
+1. Quantumult X → **重写** → 编辑：
+   - **删掉**所有旧的 `fm.exijiu.com` 整站 / `daily/` 宽匹配规则（会连弹通知）
+   - **只保留**下面这一条：
    ```
    [rewrite_local]
-   # 只匹配签到 API，避免整站请求连弹通知
-   ^https?:\/\/fm\.exijiu\.com\/api\/customer\/daily\/ url script-request-header https://raw.githubusercontent.com/WillpowerJin/ql-scripts/main/xijiu/quantumultx/xijiu_access_token.js
+   ^https?:\/\/fm\.exijiu\.com\/api\/customer\/daily\/checkTodaySignIn url script-request-header https://raw.githubusercontent.com/WillpowerJin/ql-scripts/main/xijiu/quantumultx/xijiu_access_token.js
 
    [mitm]
    hostname = fm.exijiu.com
    ```
-   （`hostname` 只**追加**，不要覆盖你原来的整行。）  
-   **若你以前配的是** `fm.exijiu.com/` **整站规则，请改成上面这一行**，否则签到页会连触发十几次。
-2. **MitM** 生成证书 → iOS 安装描述文件 → **关于本机 → 证书信任设置** 打开信任。
-3. 微信 → **习酒君品荟 → 签到页**（触发请求）。  
-   同一 token **2 分钟内只弹 1 次通知**（脚本防抖）；内容相同是正常的，更新脚本后不应再刷屏。
+   （`hostname` 只**追加**。）
+2. **MitM** 证书信任后，**右下角圆形按钮重载配置**（或开关一次 QX），确保拉到 **v3** 脚本。
+3. 微信 → **习酒君品荟 → 签到页**。  
+   正常应只弹 **1 条**；标题含 **`·v3`** 才是新脚本。  
+   正文**只有 token**（不再塞说明，避免 iOS 截断）；**3 分钟内最多 1 条通知**。
 
-**复制 token 的三种方式（任选）：**
+**复制 token（推荐顺序）：**
 
-| 方式 | 操作 |
-|------|------|
-| **通知** | 下拉通知中心 → 点开「习酒 access_token」→ **长按正文 → 拷贝**；里面有完整 token，以及 `access_token: "…"` 一行 |
-| **日志** | QX 首页 → **工具 → 日志** → 搜索 `[xijiu]` → 找 `token=` 后面整串复制 |
-| **再看一次** | QX → **工具 → 脚本运行** → 脚本 URL 填 show 脚本 raw → 运行，再弹通知 |
+| 优先级 | 方式 | 操作 |
+|--------|------|------|
+| ★最稳 | **日志** | QX → 工具 → **日志** → 搜 `[xijiu]` → 复制 `token=` **后面整行** |
+| 常用 | **通知** | 标题 `习酒token·…·v3` → 长按**正文**（正文=纯 token）→ 拷贝；看副标题「N字」是否和日志 len 一致 |
+| 补救 | **show** | 脚本运行 show raw，再弹一次 |
 
 show 脚本 raw：
 

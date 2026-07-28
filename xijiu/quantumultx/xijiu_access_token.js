@@ -1,42 +1,38 @@
 /*
- * 习酒 · 君品荟 —— Quantumult X 自动抓 access_token
+ * 习酒 · 君品荟 —— Quantumult X 抓 access_token（v3）
  *
- * 为何会「连弹很多条一样的通知」？
- *   签到页会对 fm.exijiu.com 同时发多路请求，每条都带同一个 X-access-token。
- *   并发时多个脚本实例都读到「旧缓存为空/旧值」，都以为 token 变了 → 连弹。
+ * 解决：
+ *   · 连弹多条相同通知 → 只处理 checkTodaySignIn；全局 3 分钟最多 1 条通知
+ *   · token 显示不全 → 通知正文「只放 token 本身」（iOS 会截断长正文，
+ *     前面若再加说明，token 更容易被砍掉）
  *
- * 本版处理：
- *   1) 建议 rewrite 只匹配签到相关路径（见 snippet，减少触发次数）
- *   2) 防抖：同一 token 在 DEBOUNCE_MS 内只通知 / Bark / webhook 一次
- *   3) 未变化且在防抖窗内：静默写缓存，不刷屏
+ * 复制方式：
+ *   1) 通知：长按正文 → 拷贝（正文=完整 token）
+ *   2) 日志：搜 [xijiu] → 复制 token= 后整行
+ *   3) show 脚本再弹一次
  *
- * 本地键值（可选）：
- *   xijiu_account_name   默认 iPhone
- *   xijiu_notify_always  1 = 防抖窗外也强制通知（仍防抖）
- *   xijiu_bark_url / xijiu_bark_key
- *   xijiu_webhook_url / xijiu_webhook_token
+ * rewrite 请用（务必改掉整站匹配）：
+ *   ^https?:\/\/fm\.exijiu\.com\/api\/customer\/daily\/checkTodaySignIn
  */
 (function () {
-  // 同一 token 两分钟内只弹一次通知
-  const DEBOUNCE_MS = 120 * 1000;
+  const VERSION = "v3";
+  // 任意成功通知后，3 分钟内不再弹（彻底防刷）
+  const COOLDOWN_MS = 3 * 60 * 1000;
 
   const KEY_TOKEN = "xijiu_access_token";
   const KEY_TS = "xijiu_access_token_ts";
   const KEY_UA = "xijiu_access_token_ua";
   const KEY_YAML = "xijiu_access_token_yaml";
-  // 防抖：上次「已发通知」的 token + 时间
-  const KEY_NOTIFIED_TOKEN = "xijiu_access_token_notified";
-  const KEY_NOTIFIED_TS = "xijiu_access_token_notified_ts";
-  // 抢占锁：毫秒时间戳，避免并发双发
-  const KEY_LOCK = "xijiu_access_token_lock";
+  const KEY_COOLDOWN_UNTIL = "xijiu_access_token_cool_until";
 
   const req = typeof $request !== "undefined" ? $request : {};
   const headers = req.headers || {};
+  const url = String(req.url || "");
 
   function pickHeader(h, name) {
     const target = name.toLowerCase();
     for (const k of Object.keys(h || {})) {
-      if (k.toLowerCase() === target) return String(h[k] || "");
+      if (k.toLowerCase() === target) return String(h[k] || "").trim();
     }
     return "";
   }
@@ -46,7 +42,7 @@
     try {
       v = $prefs.valueForKey(key);
     } catch (e) {}
-    if (v == null || v === "") return fallback == null ? "" : fallback;
+    if (v == null || v === "") return fallback == null ? "" : String(fallback);
     return String(v);
   }
 
@@ -56,95 +52,58 @@
     } catch (e) {}
   }
 
-  function fmt(ts) {
-    const d = new Date(ts);
-    const pad = (n) => (n < 10 ? "0" + n : "" + n);
-    return (
-      d.getFullYear() +
-      "-" +
-      pad(d.getMonth() + 1) +
-      "-" +
-      pad(d.getDate()) +
-      " " +
-      pad(d.getHours()) +
-      ":" +
-      pad(d.getMinutes()) +
-      ":" +
-      pad(d.getSeconds())
-    );
-  }
-
   function yamlLine(token) {
     const safe = String(token).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     return 'access_token: "' + safe + '"';
   }
 
-  function copyBody(name, token, when, changed) {
-    return [
-      "账号: " + name,
-      "时间: " + when,
-      "长度: " + token.length,
-      "状态: " + (changed ? "已更新" : "与缓存相同"),
-      "",
-      "—— 完整 token（整段复制）——",
-      token,
-      "",
-      "—— 粘贴到 config.yaml（该账号下）——",
-      yamlLine(token),
-      "",
-      "（同一 token 2 分钟内只通知一次，避免刷屏）",
-    ].join("\n");
-  }
-
-  const token = pickHeader(headers, "X-access-token").trim();
-  const ua = pickHeader(headers, "User-Agent");
-  const url = req.url || "";
-
+  const token = pickHeader(headers, "X-access-token");
   if (!token || token.length < 20) {
     $done({});
     return;
   }
 
   const now = Date.now();
+  const name = pref("xijiu_account_name", "iPhone");
+  const yml = yamlLine(token);
   const oldToken = pref(KEY_TOKEN, "");
   const changed = token !== oldToken;
-  const name = pref("xijiu_account_name", "iPhone");
-  const when = fmt(now);
-  const yml = yamlLine(token);
 
-  // 始终更新缓存（静默），方便 show 脚本随时复制
+  // 始终静默更新缓存
   setPref(KEY_TOKEN, token);
   setPref(KEY_TS, now);
   setPref(KEY_YAML, yml);
+  const ua = pickHeader(headers, "User-Agent");
   if (ua) setPref(KEY_UA, ua);
 
-  // —— 防抖 / 并发锁 ——
-  const lastNotifiedToken = pref(KEY_NOTIFIED_TOKEN, "");
-  const lastNotifiedTs = Number(pref(KEY_NOTIFIED_TS, "0")) || 0;
-  const withinDebounce =
-    lastNotifiedToken === token && now - lastNotifiedTs < DEBOUNCE_MS;
+  // 仅对「今日是否已签」接口发通知，其它带 token 的请求只缓存
+  // （签到页会打很多 fm 接口，只认这一个可从源头少触发）
+  const isPrimary =
+    /\/api\/customer\/daily\/checkTodaySignIn/i.test(url) ||
+    // 兼容 query 写在 path 后、或大小写差异
+    /checkTodaySignIn/i.test(url);
 
-  const lockTs = Number(pref(KEY_LOCK, "0")) || 0;
-  // 3 秒内已有实例在处理通知 → 本实例只缓存
-  const locked = lockTs > 0 && now - lockTs < 3000;
+  // 全局冷却：3 分钟内无论多少请求只通知 1 次
+  const coolUntil = Number(pref(KEY_COOLDOWN_UNTIL, "0")) || 0;
+  const inCooldown = now < coolUntil;
+  const force = pref("xijiu_notify_always", "") === "1";
 
-  const notifyAlways = pref("xijiu_notify_always", "") === "1";
-
-  // 默认：token 变了才通知；notify_always 时只要不在防抖窗也可通知
-  let shouldNotify = changed || notifyAlways;
-  if (withinDebounce || locked) {
+  let shouldNotify = isPrimary && (!inCooldown || force);
+  // 强制模式下仍避免 10 秒内连发
+  if (force && inCool && coolUntil - now > COOLDOWN_MS - 10 * 1000) {
     shouldNotify = false;
   }
 
   if (!shouldNotify) {
-    // 精简日志，避免签到页十几条请求刷爆日志
     console.log(
-      "[xijiu] skip notify | changed=" +
+      "[xijiu " +
+        VERSION +
+        "] cache only | primary=" +
+        isPrimary +
+        " cool=" +
+        inCool +
+        " changed=" +
         changed +
-        " debounce=" +
-        withinDebounce +
-        " lock=" +
-        locked +
         " len=" +
         token.length
     );
@@ -152,28 +111,27 @@
     return;
   }
 
-  // 先占锁 + 记防抖，尽量挡住并发兄弟实例
-  setPref(KEY_LOCK, now);
-  setPref(KEY_NOTIFIED_TOKEN, token);
-  setPref(KEY_NOTIFIED_TS, now);
+  // 先写冷却，降低并发双发概率
+  setPref(KEY_COOLDOWN_UNTIL, now + COOLDOWN_MS);
 
-  const body = copyBody(name, token, when, changed);
-
-  console.log("[xijiu] ========== access_token（通知 1 次）==========");
+  // 日志：完整 token + yaml（日志一般不截断，优先从这里复制最稳）
+  console.log("[xijiu " + VERSION + "] ===== COPY TOKEN BELOW =====");
   console.log("[xijiu] account=" + name);
-  console.log("[xijiu] time=" + when);
-  console.log("[xijiu] len=" + token.length + " changed=" + changed);
+  console.log("[xijiu] changed=" + changed + " len=" + token.length);
   console.log("[xijiu] token=" + token);
   console.log("[xijiu] yaml=" + yml);
   console.log("[xijiu] url=" + url);
-  console.log("[xijiu] ==============================================");
+  console.log("[xijiu " + VERSION + "] ===== END =====");
 
+  // 通知正文 = 纯 token（不要加前后缀，否则 iOS 截断时先砍掉 token）
+  // 标题里带长度，方便确认是否完整（常见约 80～100 字符）
   $notify(
-    "习酒 access_token · " + name,
-    (changed ? "已更新 · " : "未变化 · ") + when + " · " + token.length + "字",
-    body
+    "习酒token·" + name + "·" + VERSION,
+    "长按正文拷贝 · " + token.length + "字" + (changed ? " · 新" : " · 同"),
+    token
   );
 
+  // Bark：用 copy 字段，比通知更适合一键复制完整串
   const barkUrl = pref("xijiu_bark_url", "");
   const barkKey = pref("xijiu_bark_key", "");
   const barkBase = barkUrl || (barkKey ? "https://api.day.app/" + barkKey : "");
@@ -184,8 +142,9 @@
         method: "POST",
         headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({
-          title: "习酒 access_token · " + name,
-          body: body,
+          title: "习酒token·" + name,
+          // body 尽量短；真正要复制的放 copy
+          body: token.length + "字 · 已自动复制字段\n" + yml,
           group: "习酒君品荟",
           copy: token,
           autoCopy: "1",
@@ -214,7 +173,6 @@
           yaml: yml,
           ua: ua,
           ts: now,
-          time: when,
         }),
       })
       .then(
