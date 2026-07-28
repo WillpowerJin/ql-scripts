@@ -100,44 +100,64 @@ python pull_access_token.py --list   # 看 MMKV 里扫到几条
 | 未配置 access_token | 配置里该字段为空 |
 | access_token 已失效 | 填了，但过期/错误/串了别的号的 token → **重新抓包** |
 
-**方式 C（iPhone + Quantumult X 全自动抓）：**
+**方式 C（iPhone + Quantumult X，推荐）：**
 
-比方式 B 少一步「手动复制粘贴」——每次打开签到页时脚本自动把 `X-access-token` 存到本地键值，可选 Bark 通知，也可回传青龙 webhook 自动写 config。
+打开签到页后，脚本自动抓 `X-access-token`，并在 **通知正文 / QX 日志** 里给出**完整 token** 和可直接粘贴的 `access_token: "..."` 行。
 
-脚本：[`quantumultx/xijiu_access_token.js`](quantumultx/xijiu_access_token.js)  
-配置片段：[`quantumultx/xijiu_access_token.snippet.conf`](quantumultx/xijiu_access_token.snippet.conf)
+| 文件 | 作用 |
+|------|------|
+| [`quantumultx/xijiu_access_token.js`](quantumultx/xijiu_access_token.js) | 自动抓取（rewrite 触发） |
+| [`quantumultx/xijiu_access_token_show.js`](quantumultx/xijiu_access_token_show.js) | 手动再弹一次，方便复制 |
+| [`quantumultx/xijiu_access_token.snippet.conf`](quantumultx/xijiu_access_token.snippet.conf) | 配置片段 |
 
-1. **放脚本**：把 `xijiu_access_token.js` 传到你自己的 GitHub raw / jsdelivr / iCloud Drive；或者用 Quantumult X 「本地脚本编辑」直接粘贴。
-2. **加规则**（Quantumult X → 首页 → 「重写」右上角编辑器）：
+**配置步骤：**
+
+1. Quantumult X → **重写** → 编辑，加入（或导入 snippet）：
    ```
    [rewrite_local]
-   ^https?:\/\/fm\.exijiu\.com\/ url script-request-header 你的脚本URL
+   ^https?:\/\/fm\.exijiu\.com\/ url script-request-header https://raw.githubusercontent.com/WillpowerJin/ql-scripts/main/xijiu/quantumultx/xijiu_access_token.js
 
    [mitm]
-   hostname = fm.exijiu.com   # 追加到你已有的 hostname 后面，别覆盖
+   hostname = fm.exijiu.com
    ```
-3. **信任证书**：Quantumult X 首页 → 「MitM」→ 生成 CA 证书 → 在 iOS「设置 → 已下载描述文件」安装 → 「关于本机 → 证书信任设置」勾选。
-4. **触发**：打开微信 → 「习酒君品荟」小程序 → 签到页；脚本命中后弹通知「习酒 · access_token 已更新」。
-5. **拿到 token**：
-   - 通知里的预览是缩略；完整值去 **BoxJs**（若装了）→ 应用列表拉到底看 `App Rewrite Panel` 或直接搜键名，或
-   - 打开 Quantumult X → 首页 → 「工具」→ 「脚本运行」→ 新建一个「取值」测试脚本读 `xijiu_access_token`，或
-   - **推荐**：脚本自带 Bark 推送和 webhook 回传，见下方「本地键值」段。
+   （`hostname` 只**追加**，不要覆盖你原来的整行。）
+2. **MitM** 生成证书 → iOS 安装描述文件 → **关于本机 → 证书信任设置** 打开信任。
+3. 微信 → **习酒君品荟 → 签到页**（触发请求）。
 
-**本地键值**（Quantumult X 首页 → 「工具」→「BoxJs 订阅」也能可视化设置；全部可留空）：
+**复制 token 的三种方式（任选）：**
+
+| 方式 | 操作 |
+|------|------|
+| **通知** | 下拉通知中心 → 点开「习酒 access_token」→ **长按正文 → 拷贝**；里面有完整 token，以及 `access_token: "…"` 一行 |
+| **日志** | QX 首页 → **工具 → 日志** → 搜索 `[xijiu]` → 找 `token=` 后面整串复制 |
+| **再看一次** | QX → **工具 → 脚本运行** → 脚本 URL 填 show 脚本 raw → 运行，再弹通知 |
+
+show 脚本 raw：
+
+```text
+https://raw.githubusercontent.com/WillpowerJin/ql-scripts/main/xijiu/quantumultx/xijiu_access_token_show.js
+```
+
+**粘贴到 config.yaml 示例：**
+
+```yaml
+  - name: "iPhone"
+    access_token: "这里贴通知里的完整 token"
+    login_code: "..."
+```
+
+或直接用通知里的整行：`access_token: "xxxx"` 替换该账号下原字段。
+
+**可选本地键值**（`$prefs.setValueForKey("值","键")` 运行一次即可）：
 
 | 键 | 说明 |
 |----|------|
-| `xijiu_account_name` | 通知里显示的账号名，默认 `iPhone` |
-| `xijiu_bark_url` | Bark 完整 URL，如 `https://api.day.app/xxxxx`，脚本会主动 push |
-| `xijiu_bark_key` | 只填 key 时用 `https://api.day.app/{key}` |
-| `xijiu_webhook_url` | POST JSON `{name, access_token, ua, ts}` 到该地址（青龙 API / 自建服务） |
-| `xijiu_webhook_token` | 上面 URL 的 `Authorization: Bearer` |
+| `xijiu_account_name` | 通知里账号名，默认 `iPhone` |
+| `xijiu_notify_always` | 填 `1`：token 没变也弹通知（默认仅变化时弹） |
+| `xijiu_bark_url` / `xijiu_bark_key` | Bark 推送完整正文，并 `autoCopy` token |
+| `xijiu_webhook_url` | POST JSON（含 `access_token`、`yaml`） |
 
-设置方法（任选其一）：
-- Quantumult X → 「工具」→「运行脚本」→ 粘贴 `$prefs.setValueForKey("iPhone","xijiu_account_name")` 执行一次；
-- 或者装 BoxJs（https://raw.githubusercontent.com/chavyleung/scripts/master/box/chavy.boxjs.json）里手动改。
-
-**多账号（多微信）：** iPhone 上一次只登录一个微信，逐个切换微信号 → 打开签到页 → 通知触发；每次触发前先把 `xijiu_account_name` 改成对应账号名，或直接把 token 复制到 config 里同名账号的 `access_token`。
+**多账号：** 切换微信号 → 打开签到页 → 复制通知里的 token → 填到 config 里对应 `name` 的账号下。
 
 ### 抓包重点接口
 
