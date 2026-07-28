@@ -1,23 +1,20 @@
 /*
- * 习酒 · 君品荟 —— Quantumult X 抓 access_token（v3）
+ * 习酒 access_token 抓取 · Quantumult X · v4
  *
- * 解决：
- *   · 连弹多条相同通知 → 只处理 checkTodaySignIn；全局 3 分钟最多 1 条通知
- *   · token 显示不全 → 通知正文「只放 token 本身」（iOS 会截断长正文，
- *     前面若再加说明，token 更容易被砍掉）
+ * ★ 通知标题必须是：习酒TK·iPhone·v4
+ *   若标题没有「v4」，说明 QX 还在跑旧脚本（远程缓存），请改用下方「本地脚本」或带 ?v=4 的 URL。
  *
- * 复制方式：
- *   1) 通知：长按正文 → 拷贝（正文=完整 token）
- *   2) 日志：搜 [xijiu] → 复制 token= 后整行
- *   3) show 脚本再弹一次
+ * 通知正文 = 纯 86 位 token（无省略号、无「账号/时间」多行）
+ * 完整值同时写入日志：搜 [xijiu] 看 token=
  *
- * rewrite 请用（务必改掉整站匹配）：
- *   ^https?:\/\/fm\.exijiu\.com\/api\/customer\/daily\/checkTodaySignIn
+ * rewrite（二选一）：
+ *   远程（防缓存）：
+ *   .../xijiu_access_token.js?v=4
+ *   本地：script-request-header xijiu_access_token.js
  */
 (function () {
-  const VERSION = "v3";
-  // 任意成功通知后，3 分钟内不再弹（彻底防刷）
-  const COOLDOWN_MS = 3 * 60 * 1000;
+  const VERSION = "v4";
+  const COOLDOWN_MS = 5 * 60 * 1000; // 5 分钟最多 1 条通知
 
   const KEY_TOKEN = "xijiu_access_token";
   const KEY_TS = "xijiu_access_token_ts";
@@ -53,10 +50,14 @@
   }
 
   function yamlLine(token) {
-    const safe = String(token).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-    return 'access_token: "' + safe + '"';
+    return (
+      'access_token: "' +
+      String(token).replace(/\\/g, "\\\\").replace(/"/g, '\\"') +
+      '"'
+    );
   }
 
+  // 绝不对 token 做中间省略；通知/日志只用完整串
   const token = pickHeader(headers, "X-access-token");
   if (!token || token.length < 20) {
     $done({});
@@ -68,42 +69,26 @@
   const yml = yamlLine(token);
   const oldToken = pref(KEY_TOKEN, "");
   const changed = token !== oldToken;
+  const ua = pickHeader(headers, "User-Agent");
 
-  // 始终静默更新缓存
   setPref(KEY_TOKEN, token);
   setPref(KEY_TS, now);
   setPref(KEY_YAML, yml);
-  const ua = pickHeader(headers, "User-Agent");
   if (ua) setPref(KEY_UA, ua);
 
-  // 仅对「今日是否已签」接口发通知，其它带 token 的请求只缓存
-  // （签到页会打很多 fm 接口，只认这一个可从源头少触发）
-  const isPrimary =
-    /\/api\/customer\/daily\/checkTodaySignIn/i.test(url) ||
-    // 兼容 query 写在 path 后、或大小写差异
-    /checkTodaySignIn/i.test(url);
-
-  // 全局冷却：3 分钟内无论多少请求只通知 1 次
+  // 只对 checkTodaySignIn 弹通知（其它请求只缓存）
+  const isPrimary = /checkTodaySignIn/i.test(url);
   const coolUntil = Number(pref(KEY_COOLDOWN_UNTIL, "0")) || 0;
-  const inCooldown = now < coolUntil;
-  const force = pref("xijiu_notify_always", "") === "1";
+  const inCool = now < coolUntil;
 
-  let shouldNotify = isPrimary && (!inCooldown || force);
-  // 强制模式下仍避免 10 秒内连发
-  if (force && inCool && coolUntil - now > COOLDOWN_MS - 10 * 1000) {
-    shouldNotify = false;
-  }
-
-  if (!shouldNotify) {
+  if (!isPrimary || inCool) {
     console.log(
       "[xijiu " +
         VERSION +
-        "] cache only | primary=" +
+        "] silent | primary=" +
         isPrimary +
         " cool=" +
         inCool +
-        " changed=" +
-        changed +
         " len=" +
         token.length
     );
@@ -111,27 +96,25 @@
     return;
   }
 
-  // 先写冷却，降低并发双发概率
   setPref(KEY_COOLDOWN_UNTIL, now + COOLDOWN_MS);
 
-  // 日志：完整 token + yaml（日志一般不截断，优先从这里复制最稳）
-  console.log("[xijiu " + VERSION + "] ===== COPY TOKEN BELOW =====");
-  console.log("[xijiu] account=" + name);
-  console.log("[xijiu] changed=" + changed + " len=" + token.length);
-  console.log("[xijiu] token=" + token);
-  console.log("[xijiu] yaml=" + yml);
-  console.log("[xijiu] url=" + url);
-  console.log("[xijiu " + VERSION + "] ===== END =====");
+  // ========== 日志：复制最稳的地方 ==========
+  console.log("");
+  console.log("########## xijiu " + VERSION + " FULL TOKEN ##########");
+  console.log(token);
+  console.log("########## len=" + token.length + " account=" + name + " ##########");
+  console.log(yml);
+  console.log("########## END ##########");
+  console.log("");
 
-  // 通知正文 = 纯 token（不要加前后缀，否则 iOS 截断时先砍掉 token）
-  // 标题里带长度，方便确认是否完整（常见约 80～100 字符）
+  // ========== 通知：正文只有完整 token，禁止任何省略 ==========
+  // 标题带 v4，方便你确认不是旧脚本
   $notify(
-    "习酒token·" + name + "·" + VERSION,
-    "长按正文拷贝 · " + token.length + "字" + (changed ? " · 新" : " · 同"),
+    "习酒TK·" + name + "·" + VERSION,
+    "len=" + token.length + (changed ? " 新token" : " 同token") + " · 长按正文拷贝",
     token
   );
 
-  // Bark：用 copy 字段，比通知更适合一键复制完整串
   const barkUrl = pref("xijiu_bark_url", "");
   const barkKey = pref("xijiu_bark_key", "");
   const barkBase = barkUrl || (barkKey ? "https://api.day.app/" + barkKey : "");
@@ -142,9 +125,8 @@
         method: "POST",
         headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({
-          title: "习酒token·" + name,
-          // body 尽量短；真正要复制的放 copy
-          body: token.length + "字 · 已自动复制字段\n" + yml,
+          title: "习酒TK·" + name + "·" + VERSION,
+          body: token,
           group: "习酒君品荟",
           copy: token,
           autoCopy: "1",
@@ -154,30 +136,6 @@
       .then(
         () => console.log("[xijiu] Bark ok"),
         (e) => console.log("[xijiu] Bark fail " + e)
-      );
-  }
-
-  const hookUrl = pref("xijiu_webhook_url", "");
-  if (hookUrl) {
-    const hookToken = pref("xijiu_webhook_token", "");
-    const h = { "Content-Type": "application/json" };
-    if (hookToken) h["Authorization"] = "Bearer " + hookToken;
-    $task
-      .fetch({
-        url: hookUrl,
-        method: "POST",
-        headers: h,
-        body: JSON.stringify({
-          name: name,
-          access_token: token,
-          yaml: yml,
-          ua: ua,
-          ts: now,
-        }),
-      })
-      .then(
-        () => console.log("[xijiu] webhook ok"),
-        (e) => console.log("[xijiu] webhook fail " + e)
       );
   }
 
