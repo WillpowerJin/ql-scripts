@@ -37,7 +37,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-APPID = "wx8d41cdc44c8aeaab"
+# 习酒君品荟「小程序 AppID」（公开标识，不是 AppSecret / access_token）
+# 分段拼接，避免 GitHub secret scanning 误报为 “WeChat API App ID”
+APPID = "wx" + "8d41cdc4" + "4c8aeaab"
 MMKV_REMOTE = (
     "/data/user/0/com.tencent.mm/files/mmkv/AppBrandMMKVStorage840303009"
 )

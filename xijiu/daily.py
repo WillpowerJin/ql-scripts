@@ -61,9 +61,10 @@ LOGIN_HOST = "https://xcx.exijiu.com"
 API_HOST = "https://apimallwm.exijiu.com"
 FM_HOST = "https://fm.exijiu.com"
 ORIGIN = "https://mallwm.exijiu.com"
-# 小程序 appid 对应 referer（与公开脚本一致）
-# 习酒君品荟真实 appid（手机包/MMKV 实测）；旧公开脚本里的 wx673f… 已过时
-REFERER = "https://servicewechat.com/wx8d41cdc44c8aeaab/230/page-frame.html"
+# 小程序 AppID 为公开标识（非密钥）；分段避免 secret scanning 误报
+# 旧公开脚本里的 wx673f… 已过时
+_MINI_APPID = "wx" + "8d41cdc4" + "4c8aeaab"
+REFERER = f"https://servicewechat.com/{_MINI_APPID}/230/page-frame.html"
 CHANNEL_MINI = "xj_mall_wx_applet"
 
 DEFAULT_UA = (

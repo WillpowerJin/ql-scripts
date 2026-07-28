@@ -53,7 +53,7 @@ python daily.py --exchange    # 额外酒兑积分
 ### 2. access_token（每日签到领积分）
 
 旧接口 `/member/Signin/sign` 已下线；手机上能用的是 **「每日签到领积分」**。  
-真实小程序 appid：`wx8d41cdc44c8aeaab`（与旧公开脚本的 `wx673f…` 不同）。
+真实小程序 AppID 见代码内 `_MINI_APPID` / `APPID`（公开标识，不是密钥；与旧脚本 `wx673f…` 不同）。
 
 **每个账号各自一份 token，不能混用。** 失效时接口返回 `401 用户未登录`（摘要会显示「access_token 已失效」，不是「没配置」）。
 
