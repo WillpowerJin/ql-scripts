@@ -4,9 +4,27 @@
 
 - 手机号 + 密码登录（自动换取 session，无需抓包）
 - 拉取当日任务，自动完成 **12 篇** 阅读上报
-- 满额后调用抽奖接口（`activityId=67`）
+- 满额后：按策略自动抽奖（见下方 **【重点】**）
 
 风格与本仓库 [hifiti](../hifiti/) 一致：**只调接口，不操控手机 UI**。
+
+---
+
+## ★【重点】多账号抽奖策略（默认）
+
+> 抽奖站按 **出口公网 IP** 限制「同一设备一天只能抽一次」，与阅读 `deviceId` 无关。  
+> 同一台电脑 / 同一宽带跑多号时，**不能**指望每个号都自动抽奖成功。
+
+| 账号顺序（config 列表） | 自动阅读 12 篇 | 自动抽奖 | 抽奖怎么办 |
+|-------------------------|----------------|----------|------------|
+| **第 1 个** | ✅ | ✅ 默认开启 | 脚本自动 |
+| **第 2、第 3… 个** | ✅ | ❌ **默认关闭** | **请手动**：手机流量 + 望潮 App |
+| 任意号 `lottery: false` | ✅ | ❌ | 手动 / 不抽 |
+| 任意号 `lottery: true`（如有独立 proxy） | ✅ | ✅ | 脚本自动（需不同出口 IP） |
+
+启动日志会打印醒目的 `★【重点】抽奖策略` 区块，标明本轮谁抽奖、谁只阅读。
+
+---
 
 ## 功能流程
 
@@ -14,7 +32,7 @@
 2. `passport.tmuyun.com` RSA 加密密码 → `credential_auth`
 3. `POST /api/zbtxz/login` 换正式 `account_id` / `session_id`
 4. 登录阅读有礼 H5 → 任务列表 → SM2 上报已读
-5. `loginWC` + `saveUpdate` 抽奖（旧接口 `/save` 已废弃）
+5. **仅允许抽奖的账号**执行 `loginWC` + `saveUpdate`（默认只有第 1 个号）
 
 ## 本地运行
 
@@ -30,18 +48,35 @@ python read_gift.py --dry-run      # 登录 + 列任务
 python read_gift.py                # 阅读 + 抽奖
 python read_gift.py --no-lottery   # 只阅读
 python read_gift.py --lottery-only # 只抽奖
+python read_gift.py --only 主号    # 只跑配置里 name=主号 的账号
+python read_gift.py --only iPhone --no-lottery
 ```
 
 ### config.yaml 示例
 
 ```yaml
 accounts:
+  # 第 1 个：阅读 + 自动抽奖
   - name: "主号"
     phone: "13800138000"
     password: "your_password"
+  # 第 2 个起：默认只阅读，抽奖请 App 手动
+  - name: "号2"
+    phone: "13900139000"
+    password: "your_password2"
+  - name: "号3"
+    phone: "13700137000"
+    password: "your_password3"
 ```
 
 `config.yaml` 已在仓库 `.gitignore` 中，勿提交。
+
+> **多账号注意（很重要）：**
+>
+> | 环节 | 怎么识别「设备」 | 多号怎么办 |
+> |------|------------------|------------|
+> | 阅读有礼 | 请求里的 `deviceId` + UA | 脚本已按账号自动生成，互不相同 |
+> | **抽奖** | **主要看出网 IP** | **默认仅第 1 号自动抽**；副号手动（App + 流量）或配独立 `proxy` 后写 `lottery: true` |
 
 ## 青龙面板
 
@@ -108,7 +143,22 @@ WANGCHAO_LOTTERY=0           # 关闭抽奖
 WANGCHAO_NOTIFY_DRY_RUN=1    # dry-run 时也推送（默认 dry-run 不推）
 WANGCHAO_ACCOUNT_INTERVAL=20 # 多账号间隔秒数（默认 20，防限流）
 WANGCHAO_INIT_RETRIES=5      # init 限流重试次数
+WANGCHAO_PROXY=http://u:p@ip1:port&socks5://127.0.0.1:1080  # 与账号一一对应（可选）
 ```
+
+多账号 yaml：**默认不用写 `lottery`**——第 1 号自动抽，其余只阅读。
+
+若副号有独立代理、要脚本抽奖：
+
+```yaml
+  - name: "号2"
+    phone: "1yyyyyyyyyy"
+    password: "yyy"
+    proxy: "http://user:pass@代理IP:端口"   # 与主号不同出口
+    lottery: true                           # 显式打开（覆盖「非首号不抽」）
+```
+
+SOCKS 代理需：`pip install "requests[socks]"`（或 `PySocks`）。
 
 ### 4. 定时任务
 
@@ -126,7 +176,7 @@ accounts:
   - name: "主号"
     account_id: "..."
     session_id: "..."
-    device_id: "1"
+    device_id: "从抓包 login 的 deviceId 参数复制"  # 多号务必不同
 ```
 
 过滤：`xmt.taizhou.com.cn/prod-api/user-read/app/login`。
@@ -144,6 +194,8 @@ accounts:
 | 抽奖没有次数 | 当日未满 12 篇 |
 | 跑完没有 Bark | 配置 `BARK_URL` 或 `BARK_KEY`（可与 hifiti 相同） |
 | 第二账号 init「操作过于频繁」 | 同 IP 连登限流；已自动间隔+重试，可加大 `WANGCHAO_ACCOUNT_INTERVAL` |
+| 第二账号抽奖「同一设备只能参加一次」 | **不是**阅读 `deviceId` 的问题。抽奖站按**出口 IP** 限制。脚本**默认已不对第 2/3… 号自动抽奖**；副号请用手机流量在 App 内手动抽，或配独立 `proxy` 后写 `lottery: true` |
+| 阅读有礼「同一设备」 | 脚本已为每号生成独立 `deviceId`/UA；与抽奖 IP 限制是两套逻辑 |
 
 ## 依赖
 

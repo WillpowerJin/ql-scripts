@@ -22,6 +22,16 @@ new Env('望潮阅读有礼');
 也支持旧方式（抓包 session）：
     account_id + session_id + device_id
 
+多账号：
+  每个账号会生成独立 deviceId / 机型 UA（同号稳定、异号不同）
+  也可在配置里显式写 device_id；勿多号共用同一值
+
+【重点 · 抽奖策略 — 默认】
+  ★ 仅配置列表中的【第 1 个账号】自动抽奖
+  ★ 第 2、第 3… 个账号：只完成阅读任务，不自动抽奖
+  ★ 副号若要抽奖：请用手机流量在 App 内手动抽（同 IP 会判「同一设备」）
+  可在账号上写 lottery: true/false 覆盖默认；首号 lottery: false 也可关掉
+
 可选：
   WANGCHAO_LOTTERY=0
   WANGCHAO_BASE_URL=https://xmt.taizhou.com.cn
@@ -109,15 +119,18 @@ SM2_PUBLIC_KEY = (
     "64DAFC6946ABF93C8AF1C0AD96D0E770D29264EF9F907DDBAE97A2A0BB1036D4AC"
 )
 
-DEFAULT_UA_WEB = (
-    f"Mozilla/5.0 (Linux; Android 15; PKG110) AppleWebKit/537.36 "
-    f"(KHTML, like Gecko) Version/4.0 Chrome/131.0.0.0 Mobile Safari/537.36;"
-    f"xsb_wangchao;xsb_wangchao;{APP_VERSION};native_app"
+# 默认机型池：多账号按种子轮换，避免全部撞同一 deviceId / AndroidId
+_DEVICE_PROFILES = (
+    ("OPPO", "PKG110", "15", "huawei"),
+    ("OPPO", "PJE110", "14", "oppo"),
+    ("vivo", "V2324A", "14", "vivo"),
+    ("Xiaomi", "23127PN0CC", "15", "xiaomi"),
+    ("HUAWEI", "ALN-AL00", "12", "huawei"),
+    ("OnePlus", "PJZ110", "15", "oneplus"),
+    ("realme", "RMX3888", "14", "realme"),
+    ("samsung", "SM-S9180", "14", "samsung"),
 )
-DEFAULT_UA_APP = (
-    f"{APP_VERSION};00000000-699e-76bc-ffff-ffff9e3d172a;"
-    f"OPPO PKG110;Android;15;huawei"
-)
+
 DEFAULT_BARK_SERVER = "https://api.day.app"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -130,13 +143,53 @@ logger = logging.getLogger("wangchao")
 
 
 @dataclass
+class DeviceFingerprint:
+    """单账号设备指纹：阅读有礼 deviceId + App/H5 UA 用的机型信息。"""
+
+    device_id: str
+    android_id: str  # App UA 中的 UUID 段
+    brand: str
+    model: str
+    android_ver: str
+    channel: str
+
+    @property
+    def ua_web(self) -> str:
+        return (
+            f"Mozilla/5.0 (Linux; Android {self.android_ver}; {self.model}) "
+            f"AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 "
+            f"Chrome/131.0.0.0 Mobile Safari/537.36;"
+            f"xsb_wangchao;xsb_wangchao;{APP_VERSION};native_app"
+        )
+
+    @property
+    def ua_app(self) -> str:
+        return (
+            f"{APP_VERSION};{self.android_id};"
+            f"{self.brand} {self.model};Android;{self.android_ver};{self.channel}"
+        )
+
+    @property
+    def ua_passport(self) -> str:
+        return (
+            f"ANDROID;{self.android_ver};{CLIENT_ID};{APP_VERSION};1.0;null;{self.model}"
+        )
+
+
+@dataclass
 class Account:
     name: str
     phone: str = ""
     password: str = ""
     account_id: str = ""
     session_id: str = ""
-    device_id: str = "1"
+    # 空或 "1" 表示未指定 → 按账号稳定生成，多号互不相同
+    device_id: str = ""
+    # 可选 HTTP/HTTPS/SOCKS5 代理。抽奖「同一设备」按出口 IP 限制时，多号需不同出口
+    proxy: str = ""
+    # None=跟随全局 do_lottery；False=本号只阅读不抽奖
+    lottery: Optional[bool] = None
+    fingerprint: Optional[DeviceFingerprint] = field(default=None, repr=False)
 
     def has_password(self) -> bool:
         return bool(self.phone.strip() and self.password)
@@ -146,6 +199,39 @@ class Account:
 
     def ready(self) -> bool:
         return self.has_password() or self.has_session()
+
+    def identity_key(self) -> str:
+        """用于稳定哈希的账号标识（同号多次运行指纹不变）。"""
+        return (
+            self.phone.strip()
+            or self.account_id.strip()
+            or self.name.strip()
+            or "default"
+        )
+
+    def wants_lottery(self, global_enable: bool) -> bool:
+        """是否对本号执行自动抽奖。lottery 在 load_config 后已按「仅首号」落默认值。"""
+        if not global_enable:
+            return False
+        if self.lottery is None:
+            return False
+        return bool(self.lottery)
+
+
+def apply_default_lottery_policy(accounts: List[Account]) -> None:
+    """
+    【重点】默认抽奖策略（无代理 / 同出口 IP 场景）：
+
+    - 第 1 个账号：自动抽奖（lottery 未写时视为 true）
+    - 第 2、3… 个账号：只阅读，不自动抽奖（lottery 未写时视为 false）
+    - 副号抽奖请在 App 内手动完成（建议手机流量，避免「同一设备」）
+
+    账号显式配置 lottery: true/false 时尊重配置（例如有独立 proxy 可手动打开）。
+    """
+    for i, acc in enumerate(accounts):
+        if acc.lottery is not None:
+            continue
+        acc.lottery = i == 0
 
 
 @dataclass
@@ -222,8 +308,68 @@ def load_notify_from_env() -> NotifyConfig:
     )
 
 
+def _uuid_from_hex(hex32: str) -> str:
+    """把 32 位 hex 格式化成 UUID 字符串。"""
+    h = (hex32 + "0" * 32)[:32].lower()
+    return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+
+
+def build_device_fingerprint(account: Account) -> DeviceFingerprint:
+    """
+    为账号生成稳定、互不相同的设备指纹。
+
+    - 用户显式配置了非默认 device_id → 保留
+    - 否则按手机号/account_id/name 哈希，同账号每次运行一致，不同账号不同
+    """
+    seed_src = f"wangchao-device:{account.identity_key()}"
+    digest = hashlib.sha256(seed_src.encode("utf-8")).hexdigest()
+    configured = (account.device_id or "").strip()
+    # 历史默认 "1" 等同未配置，避免多账号撞同一设备
+    if configured and configured != "1":
+        device_id = configured
+    else:
+        device_id = digest[:16]
+
+    brand, model, android_ver, channel = _DEVICE_PROFILES[
+        int(digest[16:20], 16) % len(_DEVICE_PROFILES)
+    ]
+    android_id = _uuid_from_hex(digest[20:52] if len(digest) >= 52 else digest)
+
+    return DeviceFingerprint(
+        device_id=device_id,
+        android_id=android_id,
+        brand=brand,
+        model=model,
+        android_ver=android_ver,
+        channel=channel,
+    )
+
+
+def ensure_account_device(account: Account) -> DeviceFingerprint:
+    """绑定指纹到账号（device_id 回写，供 gift_login 使用）。"""
+    if account.fingerprint is None:
+        account.fingerprint = build_device_fingerprint(account)
+        account.device_id = account.fingerprint.device_id
+    return account.fingerprint
+
+
+def _parse_lottery_flag(raw: Any) -> Optional[bool]:
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return raw
+    s = str(raw).strip().lower()
+    if s in ("", "null", "none", "default"):
+        return None
+    if s in ("0", "false", "no", "off"):
+        return False
+    if s in ("1", "true", "yes", "on"):
+        return True
+    return None
+
+
 def _account_from_dict(item: Dict[str, Any], index: int) -> Account:
-    return Account(
+    acc = Account(
         name=str(item.get("name") or f"account-{index}"),
         phone=str(item.get("phone") or item.get("mobile") or item.get("username") or ""),
         password=str(item.get("password") or item.get("pwd") or ""),
@@ -238,9 +384,15 @@ def _account_from_dict(item: Dict[str, Any], index: int) -> Account:
             item.get("device_id")
             or item.get("deviceId")
             or item.get("device_no")
-            or "1"
+            or ""
+        ),
+        proxy=str(item.get("proxy") or item.get("http_proxy") or "").strip(),
+        lottery=_parse_lottery_flag(
+            item.get("lottery") if "lottery" in item else item.get("do_lottery")
         ),
     )
+    ensure_account_device(acc)
+    return acc
 
 
 def load_accounts_from_env() -> List[Account]:
@@ -255,34 +407,49 @@ def load_accounts_from_env() -> List[Account]:
     phones = _split_env("WANGCHAO_PHONE")
     passwords = _split_env("WANGCHAO_PASSWORD")
     names = _split_env("WANGCHAO_NAME")
+    devices = _split_env("WANGCHAO_DEVICE_ID")
+    proxies = _split_env("WANGCHAO_PROXY")
+    lottery_flags = _split_env("WANGCHAO_ACCOUNT_LOTTERY")
     if phones:
         accounts = []
         for i, phone in enumerate(phones):
-            accounts.append(
-                Account(
-                    name=names[i] if i < len(names) else f"account-{i}",
-                    phone=phone,
-                    password=passwords[i] if i < len(passwords) else "",
-                )
+            acc = Account(
+                name=names[i] if i < len(names) else f"account-{i}",
+                phone=phone,
+                password=passwords[i] if i < len(passwords) else "",
+                device_id=devices[i] if i < len(devices) else "",
+                proxy=proxies[i] if i < len(proxies) else "",
+                lottery=(
+                    _parse_lottery_flag(lottery_flags[i])
+                    if i < len(lottery_flags)
+                    else None
+                ),
             )
+            ensure_account_device(acc)
+            accounts.append(acc)
         return accounts
 
     # 抓包 session 备用
     ids = _split_env("WANGCHAO_ACCOUNT_ID")
     sessions = _split_env("WANGCHAO_SESSION_ID")
-    devices = _split_env("WANGCHAO_DEVICE_ID")
     if not ids:
         return []
     accounts = []
     for i, aid in enumerate(ids):
-        accounts.append(
-            Account(
-                name=names[i] if i < len(names) else f"account-{i}",
-                account_id=aid,
-                session_id=sessions[i] if i < len(sessions) else "",
-                device_id=devices[i] if i < len(devices) else "1",
-            )
+        acc = Account(
+            name=names[i] if i < len(names) else f"account-{i}",
+            account_id=aid,
+            session_id=sessions[i] if i < len(sessions) else "",
+            device_id=devices[i] if i < len(devices) else "",
+            proxy=proxies[i] if i < len(proxies) else "",
+            lottery=(
+                _parse_lottery_flag(lottery_flags[i])
+                if i < len(lottery_flags)
+                else None
+            ),
         )
+        ensure_account_device(acc)
+        accounts.append(acc)
     return accounts
 
 
@@ -305,6 +472,9 @@ def load_config(path: Optional[Path] = None) -> AppConfig:
         raise ValueError(
             "未配置账号。请填写 phone/password，或 WANGCHAO_ACCOUNTS / config.yaml"
         )
+
+    # 【重点】仅首号默认抽奖，其余只阅读（显式 lottery 配置优先）
+    apply_default_lottery_policy(accounts)
 
     api = raw.get("api") or {}
     lottery = raw.get("lottery") or {}
@@ -437,23 +607,53 @@ def _uuid_rid() -> str:
 # ---------------------------------------------------------------------------
 
 
+def _mask_proxy(proxy: str) -> str:
+    """隐藏代理 URL 中的账号密码。"""
+    p = (proxy or "").strip()
+    if "@" not in p:
+        return p
+    try:
+        # scheme://user:pass@host:port
+        left, right = p.rsplit("@", 1)
+        if "://" in left:
+            scheme, _cred = left.split("://", 1)
+            return f"{scheme}://***@{right}"
+        return f"***@{right}"
+    except Exception:
+        return "***"
+
+
 class WangChaoClient:
     def __init__(self, account: Account, cfg: AppConfig):
         self.account = account
         self.cfg = cfg
+        self.fp = ensure_account_device(account)
         self.session = requests.Session()
         self.session.headers.update(
             {
-                "User-Agent": DEFAULT_UA_WEB,
+                "User-Agent": self.fp.ua_web,
                 "Accept": "application/json, text/plain, */*",
                 "Accept-Language": "zh-CN,zh;q=0.9",
             }
         )
+        if account.proxy:
+            # http(s):// 或 socks5://；socks 需 pip install "requests[socks]"
+            self.session.proxies.update(
+                {"http": account.proxy, "https": account.proxy}
+            )
+            logger.info("[%s] 🌐 使用代理 %s", account.name, _mask_proxy(account.proxy))
         self.userinfo: Dict[str, Any] = {}
         # 匿名 / 登录后的 vapp session（签名用）
         self.vapp_session_id: str = ""
+        logger.info(
+            "[%s] 📱 设备指纹 deviceId=%s model=%s %s androidId=%s…",
+            account.name,
+            self.fp.device_id,
+            self.fp.brand,
+            self.fp.model,
+            self.fp.android_id[:13],
+        )
 
-    # ---- 通用 ----
 
     def _sleep(self, base: Optional[float] = None) -> None:
         t = self.cfg.click_cooldown if base is None else base
@@ -481,7 +681,7 @@ class WangChaoClient:
             "X-TIMESTAMP": ts,
             "X-SIGNATURE": vapp_sign(path, sid or "", rid, ts),
             "X-TENANT-ID": TENANT_ID,
-            "User-Agent": DEFAULT_UA_APP,
+            "User-Agent": self.fp.ua_app,
             "Content-Type": "application/x-www-form-urlencoded",
             "Cache-Control": "no-cache",
         }
@@ -560,7 +760,7 @@ class WangChaoClient:
         enc_pwd = rsa_encrypt_password(password)
         auth_url = f"{self.cfg.passport_url}/web/oauth/credential_auth"
         headers = {
-            "User-Agent": f"ANDROID;15;{CLIENT_ID};{APP_VERSION};1.0;null;PKG110",
+            "User-Agent": self.fp.ua_passport,
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
             "Cache-Control": "no-cache",
             "X-REQUEST-ID": _uuid_rid(),
@@ -653,10 +853,10 @@ class WangChaoClient:
         params = {
             "id": self.account.account_id,
             "sessionId": self.account.session_id,
-            "deviceId": self.account.device_id or "1",
+            "deviceId": self.fp.device_id,
         }
         headers = {
-            "User-Agent": DEFAULT_UA_WEB,
+            "User-Agent": self.fp.ua_web,
             "Referer": f"{self.cfg.base_url}/readingLuck-v5/",
             "X-Requested-With": "com.shangc.tiennews.taizhou",
         }
@@ -698,7 +898,7 @@ class WangChaoClient:
         day = self.today_str()
         url = f"{self.cfg.base_url}/prod-api/user-read/list/{day}"
         headers = {
-            "User-Agent": DEFAULT_UA_WEB,
+            "User-Agent": self.fp.ua_web,
             "Referer": f"{self.cfg.base_url}/readingLuck-v5/",
             "X-Requested-With": "com.shangc.tiennews.taizhou",
         }
@@ -777,7 +977,7 @@ class WangChaoClient:
         signature = sm2_encrypt_signature(payload)
         url = f"{self.cfg.base_url}/prod-api/already-read/article/new"
         headers = {
-            "User-Agent": DEFAULT_UA_WEB,
+            "User-Agent": self.fp.ua_web,
             "Referer": f"{self.cfg.base_url}/readingLuck-v5/",
             "X-Requested-With": "com.shangc.tiennews.taizhou",
         }
@@ -917,11 +1117,13 @@ class WangChaoClient:
             f"#/pages/luckdraw/circle-awsc?activityId={self.cfg.activity_id}"
         )
         headers = {
-            "User-Agent": DEFAULT_UA_WEB,
+            "User-Agent": self.fp.ua_web,
             "Referer": referer,
             "X-Requested-With": "com.shangc.tiennews.taizhou",
             "Accept": "*/*",
         }
+        # App 内 loginWC 的 sessionId 来自 getUniqueId；脚本侧用 vapp session 即可登录。
+        # 实测无论填 session / deviceId / androidId，都无法绕过「同一设备」——按出口 IP 限制。
         resp = self.session.get(
             login_url,
             params={
@@ -935,7 +1137,7 @@ class WangChaoClient:
         if str(data.get("code")) != "200":
             msg = data.get("message") or data.get("msg") or data
             logger.error("[%s] ❌ 抽奖站登录失败: %s", self.account.name, msg)
-            return {"ok": False, "msg": str(msg), "already": False}
+            return {"ok": False, "msg": str(msg), "already": False, "same_device": False}
 
         body = data.get("data")
         if isinstance(body, dict) and body.get("token"):
@@ -968,6 +1170,7 @@ class WangChaoClient:
         already = any(
             k in msg for k in ("已抽", "明天再来", "已经参与", "次数用完", "没有抽奖")
         )
+        same_device = "同一设备" in msg or "同一裝置" in msg
         ok = str(code) == "200" or already
 
         if str(code) == "200":
@@ -983,6 +1186,18 @@ class WangChaoClient:
                 )
         elif already:
             logger.info("[%s] 🎁 今日已抽过，明天再来", self.account.name)
+        elif same_device:
+            logger.warning(
+                "[%s] ❌ 抽奖失败：%s",
+                self.account.name,
+                msg or code,
+            )
+            logger.warning(
+                "[%s] 💡 抽奖「同一设备」按出口 IP 限制，与阅读 deviceId 无关。"
+                "同机器/同宽带多号只会中一次；请给该号配置独立 proxy，"
+                "或 lottery: false 只做阅读，或用手机流量在 App 内抽。",
+                self.account.name,
+            )
         else:
             logger.warning(
                 "[%s] ❌ 抽奖失败：%s",
@@ -1026,6 +1241,7 @@ class WangChaoClient:
             "msg": msg,
             "prize": prize,
             "already": already,
+            "same_device": same_device,
         }
 
 
@@ -1113,8 +1329,12 @@ def _fmt_lottery_line(lot: Dict[str, Any]) -> str:
     """抽奖结果一行文案。"""
     msg = str(lot.get("msg") or "").strip()
     prize = lot.get("prize")
+    if lot.get("skipped"):
+        return f"🎁 抽奖：跳过（仅首号自动；副号请 App 手动）"
     if lot.get("already") or "已抽" in msg or "明天" in msg:
         return f"🎁 抽奖：今日已抽过，明天再来"
+    if lot.get("same_device") or "同一设备" in msg:
+        return f"🎁 抽奖：❌ 同一出口IP已抽过（需独立代理/流量）"
     if lot.get("ok") and str(lot.get("code")) == "200":
         # 成功中奖 / 谢谢参与
         if prize is not None and str(prize) not in ("", "None"):
@@ -1244,8 +1464,9 @@ def run_account(account: Account, cfg: AppConfig, dry_run: bool) -> Dict[str, An
         read_result = client.complete_reads(dry_run=dry_run)
         out["read"] = read_result
 
+        do_lot = account.wants_lottery(cfg.do_lottery)
         if (
-            cfg.do_lottery
+            do_lot
             and not dry_run
             and read_result.get("ok")
             and int(read_result.get("completed_after") or 0)
@@ -1253,7 +1474,17 @@ def run_account(account: Account, cfg: AppConfig, dry_run: bool) -> Dict[str, An
         ):
             logger.info("[%s] 🎯 阅读已满，开始抽奖 …", account.name)
             out["lottery"] = client.lottery_draw()
-        elif cfg.do_lottery and not dry_run and not read_result.get("ok"):
+        elif not do_lot:
+            # 【重点】副号默认不抽奖
+            if cfg.do_lottery:
+                logger.info(
+                    "[%s] ⏸️【重点】本号不自动抽奖（仅阅读）；"
+                    "如需抽奖请用手机流量在 App 内手动操作",
+                    account.name,
+                )
+            else:
+                logger.info("[%s] ⏸️ 全局已关闭抽奖", account.name)
+        elif do_lot and not dry_run and not read_result.get("ok"):
             logger.info(
                 "[%s] ⏸️ 未读满（%s/%s），跳过抽奖",
                 account.name,
@@ -1286,6 +1517,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="只登录并列任务")
     parser.add_argument("--no-lottery", action="store_true")
     parser.add_argument("--lottery-only", action="store_true")
+    parser.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="只跑指定账号 name（可重复，如 --only 主号 --only iPhone）",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -1303,14 +1541,52 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.no_lottery:
         cfg.do_lottery = False
 
+    if args.only:
+        want = {x.strip() for x in args.only if x and x.strip()}
+        matched = [a for a in cfg.accounts if a.name in want]
+        missing = want - {a.name for a in matched}
+        if missing:
+            known = ", ".join(a.name for a in cfg.accounts) or "(无)"
+            print(
+                f"未找到账号: {', '.join(sorted(missing))}；当前配置有: {known}",
+                file=sys.stderr,
+            )
+            return 2
+        cfg.accounts = matched
+
     setup_logging(cfg.log_level)
     logger.info("🌊 望潮 · 阅读有礼")
+    lottery_names = [
+        a.name for a in cfg.accounts if a.wants_lottery(cfg.do_lottery) and not args.dry_run
+    ]
+    read_only_names = [
+        a.name
+        for a in cfg.accounts
+        if not a.wants_lottery(cfg.do_lottery) or args.dry_run
+    ]
     logger.info(
-        "   账号 %s 个 · 抽奖 %s · dry-run %s",
+        "   账号 %s 个 · 全局抽奖 %s · dry-run %s",
         len(cfg.accounts),
         "开" if (cfg.do_lottery and not args.dry_run) else "关",
         "是" if args.dry_run else "否",
     )
+    # 【重点】启动时醒目标记抽奖策略
+    logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    logger.info("★【重点】抽奖策略（同出口 IP 限制）")
+    logger.info("  · 仅第 1 个账号默认自动抽奖；第 2/3… 号只完成阅读")
+    logger.info("  · 副号抽奖请手动：手机流量 + 望潮 App")
+    if lottery_names:
+        logger.info("  · 本轮自动抽奖：%s", "、".join(lottery_names))
+    else:
+        logger.info("  · 本轮自动抽奖：（无）")
+    if read_only_names and not args.dry_run:
+        logger.info(
+            "  · 本轮仅阅读：%s",
+            "、".join(
+                a.name for a in cfg.accounts if not a.wants_lottery(cfg.do_lottery)
+            ),
+        )
+    logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     results = []
     n_acc = len(cfg.accounts)
@@ -1329,6 +1605,27 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         if args.lottery_only:
             log_banner(f"👤 {acc.name}（仅抽奖）")
+            if not acc.wants_lottery(cfg.do_lottery):
+                logger.info(
+                    "[%s] ⏸️【重点】本号不自动抽奖，跳过；"
+                    "副号请用手机流量在 App 内手动抽",
+                    acc.name,
+                )
+                results.append(
+                    {
+                        "name": acc.name,
+                        "ok": True,
+                        "lottery": {
+                            "ok": True,
+                            "msg": "已跳过自动抽奖（非首号/已关闭）",
+                            "already": False,
+                            "same_device": False,
+                            "skipped": True,
+                        },
+                        "read": None,
+                    }
+                )
+                continue
             client = WangChaoClient(acc, cfg)
             try:
                 client.ensure_credentials()

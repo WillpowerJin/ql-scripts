@@ -7,7 +7,8 @@
 | 脚本 | 说明 | 文档 |
 |------|------|------|
 | [hifiti](./hifiti/) | [HiFiNi 音乐磁场](https://www.hifiti.com/) 自动签到（Cookie 优先，失效可密码重登） | [使用说明 →](./hifiti/README.md) |
-| [wangchao](./wangchao/) | 望潮 App「阅读有礼」：手机号密码登录，自动阅读满 12 篇并抽奖 | [使用说明 →](./wangchao/README.md) |
+| [wangchao](./wangchao/) | 望潮「阅读有礼」：多号自动阅读 12 篇；**默认仅第 1 号自动抽奖**，其余号请 App 手动抽 | [使用说明 →](./wangchao/README.md) |
+| [xijiu](./xijiu/) | 习酒君品荟小程序：签到有礼 + 文旅酒谷（种养/任务/制酒） | [使用说明 →](./xijiu/README.md) |
 
 后续新脚本会以同级目录形式增加，并在本表登记。
 
@@ -23,12 +24,12 @@
 | 类型 | 公开仓库 |
 | 链接 | `https://github.com/WillpowerJin/ql-scripts.git` |
 | 分支 | `main` |
-| **白名单** | `checkin\|read_gift` |
+| **白名单** | `checkin\|read_gift\|xijiu` |
 | **黑名单** | `README\|config\|example\|requirements\|\.md\|\.yaml\|\.yml\|\.txt` |
 | 扩展名 | `py` |
 | 定时规则 | 按需，例如 `30 8 * * *`（仅自动拉库，不是跑任务） |
 
-> **白名单必须带上 `read_gift`**，否则只会拉到 `hifiti/checkin.py`，不会拉 `wangchao/read_gift.py`。  
+> **白名单**需包含 `read_gift`、`xijiu` 等关键字，否则对应子目录不会被拉。  
 > 白名单匹配的是**路径里是否包含关键字**，多个用 `\|` 分隔。
 
 ### 已有订阅（只点「运行」不够）
@@ -36,15 +37,15 @@
 若你以前是按旧文档只填了白名单 `checkin`：
 
 1. 打开该订阅 → **编辑**
-2. 把白名单改成：`checkin|read_gift`
+2. 把白名单改成：`checkin|read_gift|xijiu`
 3. **保存**后再点运行
 
-只点「运行」会沿用旧参数，**不会**自动读本仓库 README，也**不会**自动加上望潮脚本。
+只点「运行」会沿用旧参数，**不会**自动读本仓库 README，也**不会**自动加上新脚本。
 
 ### 命令行等价写法
 
 ```bash
-ql repo https://github.com/WillpowerJin/ql-scripts.git "checkin|read_gift" "README|config|example|requirements|\.md|\.yaml|\.yml|\.txt" "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "checkin|read_gift|xijiu" "README|config|example|requirements|\.md|\.yaml|\.yml|\.txt" "" "main" "py"
 ```
 
 参数含义：
@@ -52,7 +53,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "checkin|read_gift" "READ
 | 位置 | 含义 | 本仓库取值 |
 |------|------|------------|
 | 1 | 仓库地址 | 见上 |
-| 2 | 白名单（路径包含即拉取） | `checkin\|read_gift` |
+| 2 | 白名单（路径包含即拉取） | `checkin\|read_gift\|xijiu` |
 | 3 | 黑名单（路径包含则跳过） | 文档/配置等 |
 | 4 | 依赖文件 | 空 |
 | 5 | 分支 | `main` |
@@ -63,6 +64,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "checkin|read_gift" "READ
 ```text
 …/hifiti/checkin.py
 …/wangchao/read_gift.py
+…/xijiu/daily.py
 ```
 
 账号、Cookie、密码、Bark 等**不要写进仓库**，在青龙「环境变量」中配置。  
