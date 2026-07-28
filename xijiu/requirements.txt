@@ -1,0 +1,4 @@
+requests>=2.31.0
+PyYAML>=6.0.1
+# 可选：本地酒谷滑块识别（不配 OCR_SERVER 时）
+# ddddocr>=1.4.11
