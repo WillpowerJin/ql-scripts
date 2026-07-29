@@ -1,0 +1,25 @@
+# 夸克网盘签到 · 本地调试配置（青龙请用环境变量，见 README）
+# cp config.example.yaml config.yaml   # 填好后不要 git add
+
+accounts:
+  # 推荐：整段 URL 贴进 url 字段，脚本自动解析 kps / sign / vcode
+  - name: "主号"
+    url: "https://drive-m.quark.cn/1/clouddrive/act/growth/reward?xxxx=xxxx&kps=你的kps&sign=你的sign&vcode=你的vcode"
+
+  # 兼容：也可以拆开三个字段
+  # - name: "备号"
+  #   kps: "你的kps"
+  #   sign: "你的sign"
+  #   vcode: "你的vcode"
+
+notify:
+  # Bark：二选一
+  # 完整 URL（App 里复制），如 https://api.day.app/xxxxxxxx/
+  bark_url: ""
+  # 或只填 key
+  bark_key: ""
+  bark_server: "https://api.day.app"
+  bark_group: "夸克签到"
+  # bark_sound: "bell"
+  # bark_icon: "https://example.com/icon.png"
+  # bark_level: "active"       # active / timeSensitive / passive
