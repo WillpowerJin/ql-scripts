@@ -27,16 +27,25 @@ cron: 0 8 * * *
 
 二、写入环境变量（青龙 / 本地均可）
 
-    变量名：COOKIE_QUARK
-    多账号：用「回车」或「&&」分隔
+    方式 A（推荐）：QUARK_ACCOUNTS —— JSON 数组，多账号最清晰
 
-    推荐格式（URL 整段贴进来，脚本自动解析）：
-      user=张三; url=https://drive-m.quark.cn/1/clouddrive/act/growth/reward?...&kps=xxx&sign=yyy&vcode=zzz
+      [
+        {"name": "张三", "url": "https://drive-m.quark.cn/1/clouddrive/act/growth/reward?...&kps=xxx&sign=yyy&vcode=zzz"},
+        {"name": "李四", "kps": "xxx", "sign": "yyy", "vcode": "zzz"}
+      ]
 
-    兼容旧格式（拆开三个字段也可以）：
-      user=张三; kps=xxx; sign=yyy; vcode=zzz
+      青龙里粘贴时必须是**一整行**合法 JSON；密码 / URL 中若有 " 需转义。
 
-    其中 user 是自定义备注，多账号时用来区分。
+    方式 B（兼容旧格式）：COOKIE_QUARK —— 分号分隔字段，多账号用「回车」或「&&」
+
+      推荐子写法（URL 整段贴进来，脚本自动解析）：
+        user=张三; url=https://drive-m.quark.cn/1/clouddrive/act/growth/reward?...&kps=xxx&sign=yyy&vcode=zzz
+
+      兼容子写法（拆开三个字段）：
+        user=张三; kps=xxx; sign=yyy; vcode=zzz
+
+    两个变量同时存在时以 QUARK_ACCOUNTS 优先。
+    user / name 是自定义备注，多账号方便区分。
 
 三、（可选）Bark 通知
 
@@ -178,19 +187,65 @@ def send_bark(cfg: BarkConfig, title: str, body: str) -> None:
 # ============================================================
 
 def get_env() -> list[str]:
+    # 方式 A（推荐）：QUARK_ACCOUNTS JSON 数组
+    json_raw = os.environ.get("QUARK_ACCOUNTS")
+    if json_raw:
+        parsed = _parse_accounts_json(json_raw)
+        if parsed:
+            return parsed
+
+    # 方式 B（兼容旧格式）：COOKIE_QUARK，分号字段 + \n/&& 分隔多账号
     raw = os.environ.get("COOKIE_QUARK")
     if raw:
         return [x.strip() for x in re.split(r"\n|&&", raw) if x.strip()]
 
-    # 兜底：本地 config.yaml
+    # 方式 C（本地兜底）：config.yaml
     yaml_cookies = _load_cookies_from_yaml()
     if yaml_cookies:
         return yaml_cookies
 
-    print("❌ 未添加 COOKIE_QUARK 变量，且未找到 config.yaml")
+    print("❌ 未配置账号：请设置 QUARK_ACCOUNTS 或 COOKIE_QUARK 环境变量，或提供 config.yaml")
     if _ql_notify:
-        _ql_notify("夸克自动签到", "❌ 未添加 COOKIE_QUARK 变量")
+        _ql_notify("夸克自动签到", "❌ 未配置账号：QUARK_ACCOUNTS / COOKIE_QUARK 均缺失")
     sys.exit(0)
+
+
+def _parse_accounts_json(raw: str) -> list[str]:
+    """
+    QUARK_ACCOUNTS 支持 JSON 数组或单个 JSON 对象，字段与 config.yaml 对齐：
+      [
+        {"name": "张三", "url": "https://drive-m.quark.cn/1/clouddrive/act/growth/reward?...&kps=..&sign=..&vcode=.."},
+        {"name": "李四", "kps": "...", "sign": "...", "vcode": "..."}
+      ]
+    也允许 name 缺省。字段名 name / user 等价。
+    """
+    import json as _json
+    try:
+        data = _json.loads(raw)
+    except Exception as e:
+        print(f"⚠️  QUARK_ACCOUNTS 不是合法 JSON: {e}，尝试回退到 COOKIE_QUARK")
+        return []
+    if isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list):
+        print("⚠️  QUARK_ACCOUNTS 顶层应为 JSON 数组或对象，忽略")
+        return []
+    out: list[str] = []
+    for acc in data:
+        if not isinstance(acc, dict):
+            continue
+        parts: list[str] = []
+        name = acc.get("name") or acc.get("user")
+        if name:
+            parts.append(f"user={name}")
+        if acc.get("url"):
+            parts.append(f"url={acc['url']}")
+        for k in ("kps", "sign", "vcode"):
+            if acc.get(k):
+                parts.append(f"{k}={acc[k]}")
+        if parts:
+            out.append("; ".join(parts))
+    return out
 
 
 def _load_cookies_from_yaml() -> list[str]:

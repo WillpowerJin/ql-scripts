@@ -72,11 +72,36 @@
 
 ## 环境变量（账号）
 
-变量名：**`COOKIE_QUARK`**，多账号用「回车」或「`&&`」分隔。
+支持两种写法，二选一。同时存在时 **`QUARK_ACCOUNTS` 优先**。
 
-### 方式 A（推荐）：整段 URL
+### 方式 A（推荐）：`QUARK_ACCOUNTS` JSON 数组
 
-抓包得到的完整 URL 直接贴过来，脚本会自动解析出 `kps / sign / vcode`：
+多账号最清晰，字段与 `config.yaml` 对齐：
+
+```json
+[
+  {
+    "name": "张三",
+    "url": "https://drive-m.quark.cn/1/clouddrive/act/growth/reward?xxxx=xxxx&kps=abc&sign=def&vcode=123"
+  },
+  {
+    "name": "李四",
+    "kps": "abc",
+    "sign": "def",
+    "vcode": "123"
+  }
+]
+```
+
+- `name` 是自定义备注（也可写成 `user`），多账号方便区分
+- `url` 与 `kps/sign/vcode` 二选一：写 `url` 时脚本自动解析；两种都写时以三个字段为准
+- 青龙里粘贴时必须是**一整行合法 JSON**，包含 `"` 的字段要转义
+
+### 方式 B（兼容旧格式）：`COOKIE_QUARK` 分号字段
+
+多账号用「回车」或「`&&`」分隔。
+
+推荐子写法（URL 整段贴进来，脚本自动解析）：
 
 ```text
 user=张三; url=https://drive-m.quark.cn/1/clouddrive/act/growth/reward?xxxx=xxxx&kps=abc&sign=def&vcode=123
@@ -90,14 +115,13 @@ user=张三; url=https://drive-m.quark.cn/1/clouddrive/act/growth/reward?...&kps
 user=李四; url=https://drive-m.quark.cn/1/clouddrive/act/growth/reward?...&kps=xxx&sign=yyy&vcode=zzz
 ```
 
-### 方式 B（兼容旧格式）：拆开三个字段
+兼容子写法（拆开三个字段）：
 
 ```text
 user=张三; kps=abc; sign=def; vcode=123
 ```
 
-- `user` 是自定义备注，多账号方便区分，字段可省（默认「未命名」）
-- 三个签名值保留 URL 编码原样即可，脚本会直接透传给夸克接口
+三个签名值保留 URL 编码原样即可，脚本会直接透传给夸克接口。
 
 ## 环境变量（Bark，可选，与 hifiti / wangchao 共用）
 
