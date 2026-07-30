@@ -133,6 +133,10 @@ _DEVICE_PROFILES = (
 
 DEFAULT_BARK_SERVER = "https://api.day.app"
 
+# session 缓存：减少每次跑都重新 init → passport → zbtxz/login 的频繁换票风控
+SESSION_CACHE_DIR = Path(__file__).resolve().parent / ".sessions"
+SESSION_CACHE_DAYS = 7
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 logger = logging.getLogger("wangchao")
 
@@ -189,6 +193,8 @@ class Account:
     proxy: str = ""
     # None=跟随全局 do_lottery；False=本号只阅读不抽奖
     lottery: Optional[bool] = None
+    # App 内抓包的「设备唯一 sessionId」，用于抽奖站 loginWC（与 vapp session 不同）
+    app_unique_id: str = ""
     fingerprint: Optional[DeviceFingerprint] = field(default=None, repr=False)
 
     def has_password(self) -> bool:
@@ -274,6 +280,8 @@ class AppConfig:
     account_interval: float = 20.0
     # init 限流时最大重试次数
     init_max_retries: int = 5
+    # 启动随机抖动（秒），避免多账号固定时间集中跑
+    start_jitter: float = 300.0
     log_level: str = "INFO"
 
 
@@ -353,6 +361,73 @@ def ensure_account_device(account: Account) -> DeviceFingerprint:
     return account.fingerprint
 
 
+# ---------------------------------------------------------------------------
+# Session 缓存
+# ---------------------------------------------------------------------------
+
+
+def _session_cache_path(account: Account) -> Path:
+    """按账号标识生成独立的缓存文件。"""
+    key = account.identity_key()
+    name = hashlib.sha256(f"wangchao-session:{key}".encode("utf-8")).hexdigest()[:16]
+    SESSION_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return SESSION_CACHE_DIR / f"{name}.json"
+
+
+def _session_cache_load(account: Account) -> Optional[Dict[str, Any]]:
+    """读取本地缓存的 session，过期/损坏返回 None。"""
+    path = _session_cache_path(account)
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        expires = int(data.get("expires_at") or 0)
+        if 0 < expires < int(time.time()):
+            logger.debug("[%s] session 缓存已过期", account.name)
+            return None
+        # 最低字段校验
+        if (
+            data.get("account_id")
+            and data.get("session_id")
+            and data.get("vapp_session_id")
+        ):
+            return data
+    except Exception as e:
+        logger.debug("[%s] session 缓存读取失败: %s", account.name, e)
+    return None
+
+
+def _session_cache_save(account: Account) -> None:
+    """把当前账号的 session 写到本地缓存。"""
+    if not account.account_id or not account.session_id:
+        return
+    path = _session_cache_path(account)
+    data = {
+        "account_id": account.account_id,
+        "session_id": account.session_id,
+        "vapp_session_id": account.session_id,
+        "saved_at": int(time.time()),
+        "expires_at": int(time.time()) + 86400 * SESSION_CACHE_DAYS,
+    }
+    try:
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        path.chmod(0o600)
+        logger.debug("[%s] session 缓存已保存", account.name)
+    except Exception as e:
+        logger.warning("[%s] session 缓存保存失败: %s", account.name, e)
+
+
+def _session_cache_clear(account: Account) -> None:
+    """缓存失效/登录失败时清理。"""
+    path = _session_cache_path(account)
+    try:
+        if path.exists():
+            path.unlink()
+            logger.debug("[%s] session 缓存已清理", account.name)
+    except Exception:
+        pass
+
+
 def _parse_lottery_flag(raw: Any) -> Optional[bool]:
     if raw is None:
         return None
@@ -390,6 +465,12 @@ def _account_from_dict(item: Dict[str, Any], index: int) -> Account:
         lottery=_parse_lottery_flag(
             item.get("lottery") if "lottery" in item else item.get("do_lottery")
         ),
+        app_unique_id=str(
+            item.get("app_unique_id")
+            or item.get("appUniqueId")
+            or item.get("unique_id")
+            or ""
+        ).strip(),
     )
     ensure_account_device(acc)
     return acc
@@ -410,6 +491,7 @@ def load_accounts_from_env() -> List[Account]:
     devices = _split_env("WANGCHAO_DEVICE_ID")
     proxies = _split_env("WANGCHAO_PROXY")
     lottery_flags = _split_env("WANGCHAO_ACCOUNT_LOTTERY")
+    app_unique_ids = _split_env("WANGCHAO_APP_UNIQUE_ID")
     if phones:
         accounts = []
         for i, phone in enumerate(phones):
@@ -424,6 +506,7 @@ def load_accounts_from_env() -> List[Account]:
                     if i < len(lottery_flags)
                     else None
                 ),
+                app_unique_id=app_unique_ids[i] if i < len(app_unique_ids) else "",
             )
             ensure_account_device(acc)
             accounts.append(acc)
@@ -432,6 +515,7 @@ def load_accounts_from_env() -> List[Account]:
     # 抓包 session 备用
     ids = _split_env("WANGCHAO_ACCOUNT_ID")
     sessions = _split_env("WANGCHAO_SESSION_ID")
+    app_unique_ids = _split_env("WANGCHAO_APP_UNIQUE_ID")
     if not ids:
         return []
     accounts = []
@@ -447,6 +531,7 @@ def load_accounts_from_env() -> List[Account]:
                 if i < len(lottery_flags)
                 else None
             ),
+            app_unique_id=app_unique_ids[i] if i < len(app_unique_ids) else "",
         )
         ensure_account_device(acc)
         accounts.append(acc)
@@ -495,6 +580,9 @@ def load_config(path: Optional[Path] = None) -> AppConfig:
     init_max_retries = int(
         _env("WANGCHAO_INIT_RETRIES") or api.get("init_max_retries") or 5
     )
+    start_jitter = float(
+        _env("WANGCHAO_START_JITTER") or api.get("start_jitter") or 300
+    )
 
     # 环境变量优先于 yaml（方便青龙统一配 BARK_*）
     env_notify = load_notify_from_env()
@@ -539,6 +627,7 @@ def load_config(path: Optional[Path] = None) -> AppConfig:
         jitter=float(api.get("jitter") or 1.5),
         account_interval=account_interval,
         init_max_retries=init_max_retries,
+        start_jitter=start_jitter,
         log_level=str(_env("WANGCHAO_LOG_LEVEL") or log.get("level") or "INFO"),
     )
 
@@ -831,10 +920,26 @@ class WangChaoClient:
         return account_id, session_id
 
     def ensure_credentials(self) -> None:
-        """优先密码登录；否则使用配置中的 session。"""
+        """优先密码登录；否则使用配置中的 session；有缓存时优先复用缓存。"""
+        # 1) 密码账号优先读本地缓存，避免频繁 init/passport/zbtxz 换票
         if self.account.has_password():
+            cached = _session_cache_load(self.account)
+            if cached:
+                self.account.account_id = str(cached["account_id"])
+                self.account.session_id = str(cached["session_id"])
+                self.vapp_session_id = str(cached.get("vapp_session_id") or cached["session_id"])
+                logger.info(
+                    "[%s] 🔐 使用缓存 session（%s…），%s 天后过期",
+                    self.account.name,
+                    self.vapp_session_id[:12],
+                    SESSION_CACHE_DAYS,
+                )
+                return
             self.login_with_password()
+            _session_cache_save(self.account)
             return
+
+        # 2) 显式配置 session（抓包/青龙变量）
         if self.account.has_session():
             self.vapp_session_id = self.account.session_id
             logger.info(
@@ -888,6 +993,10 @@ class WangChaoClient:
             data.get("code"),
             msg,
         )
+        # 若之前用了缓存 session，失败可能是缓存已失效，清理下次重登
+        if _session_cache_load(self.account):
+            _session_cache_clear(self.account)
+            logger.info("[%s] 🗑️ 已清理失效 session 缓存，下次将重新登录", self.account.name)
         return False
 
     @staticmethod
@@ -1109,26 +1218,28 @@ class WangChaoClient:
 
         注意：
         - 旧接口 /save 已废弃，会固定返回「请重新打开APP参与抽奖」
-        - 现行 H5 使用 /saveUpdate（circle-awsc 页，可附带阿里云 AWSC 滑块字段）
+        - 现行使用 /saveUpdate（circle-awsc 页，可附带阿里云 AWSC 滑块字段）
+        - loginWC 优先使用 App 内抓包的 app_unique_id 作为 sessionId；
+          请求头保留含 xsb_wangchao 的 UA + 包名 X-Requested-With + vapp 签名，
+          并去掉 Referer/Origin 等外部 H5 痕迹。
         """
         login_url = f"{self.cfg.lottery_base}/tzrb/user/loginWC"
-        referer = (
-            f"{self.cfg.lottery_base}/luckdraw-ra-1/"
-            f"#/pages/luckdraw/circle-awsc?activityId={self.cfg.activity_id}"
-        )
+        # 优先使用 App 内抓包的 unique sessionId；未配置时回退到 vapp session
+        lottery_session_id = self.account.app_unique_id or self.account.session_id
+        # 服务端通过 UA 判断是否「望潮APP环境」，ua_web 含 xsb_wangchao 标识；
+        # 同时去掉 Referer/Origin 等外部 H5 痕迹，保留包名和 vapp 签名头。
+        login_path = "/tzrb/user/loginWC"
         headers = {
+            **self._vapp_headers(login_path, session_id=self.vapp_session_id),
             "User-Agent": self.fp.ua_web,
-            "Referer": referer,
             "X-Requested-With": "com.shangc.tiennews.taizhou",
             "Accept": "*/*",
         }
-        # App 内 loginWC 的 sessionId 来自 getUniqueId；脚本侧用 vapp session 即可登录。
-        # 实测无论填 session / deviceId / androidId，都无法绕过「同一设备」——按出口 IP 限制。
         resp = self.session.get(
             login_url,
             params={
                 "accountId": self.account.account_id,
-                "sessionId": self.account.session_id,
+                "sessionId": lottery_session_id,
             },
             headers=headers,
             timeout=self.cfg.timeout,
@@ -1145,21 +1256,26 @@ class WangChaoClient:
 
         # 现行接口：saveUpdate（旧 save 会误报「请重新打开APP」）
         draw_url = f"{self.cfg.lottery_base}/tzrb/userAwardRecordUpgrade/saveUpdate"
+        draw_path = "/tzrb/userAwardRecordUpgrade/saveUpdate"
+        # 抽奖表单里的 sessionId 与 loginWC 保持一致；
+        # sig/token 为 AWSC 滑块产物；未抓取时先空着。
         form = {
             "activityId": str(self.cfg.activity_id),
-            # AWSC 滑块字段；无滑块时先空着，服务端多数情况仍可处理（已抽/有次数）
-            "sessionId": "",
+            "sessionId": lottery_session_id,
             "sig": "",
             "token": "",
+        }
+        draw_headers = {
+            **self._vapp_headers(draw_path, session_id=self.vapp_session_id),
+            "User-Agent": self.fp.ua_web,
+            "X-Requested-With": "com.shangc.tiennews.taizhou",
+            "Accept": "*/*",
+            "Content-Type": "application/x-www-form-urlencoded",
         }
         resp2 = self.session.post(
             draw_url,
             data=form,
-            headers={
-                **headers,
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Origin": self.cfg.lottery_base,
-            },
+            headers=draw_headers,
             timeout=self.cfg.timeout,
         )
         data2 = self._parse(resp2)
@@ -1212,14 +1328,21 @@ class WangChaoClient:
 
         # 最近记录
         try:
+            hist_path = "/tzrb/userAwardRecordUpgrade/pageList"
+            hist_headers = {
+                **self._vapp_headers(hist_path, session_id=self.vapp_session_id),
+                "User-Agent": self.fp.ua_web,
+                "X-Requested-With": "com.shangc.tiennews.taizhou",
+                "Accept": "*/*",
+            }
             hist = self.session.get(
-                f"{self.cfg.lottery_base}/tzrb/userAwardRecordUpgrade/pageList",
+                f"{self.cfg.lottery_base}{hist_path}",
                 params={
                     "pageSize": 5,
                     "pageNum": 1,
                     "activityId": self.cfg.activity_id,
                 },
-                headers=headers,
+                headers=hist_headers,
                 timeout=self.cfg.timeout,
             )
             hdata = self._parse(hist)
@@ -1555,7 +1678,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         cfg.accounts = matched
 
     setup_logging(cfg.log_level)
-    logger.info("🌊 望潮 · 阅读有礼")
+
+    # 启动随机抖动：多账号/多容器固定 cron 时，错开请求时间
+    if cfg.start_jitter > 0:
+        jitter = random.uniform(0, cfg.start_jitter)
+        logger.info(
+            "🌊 望潮 · 阅读有礼 · 启动抖动 %.0f 秒（最大 %.0f 秒）",
+            jitter,
+            cfg.start_jitter,
+        )
+        time.sleep(jitter)
+    else:
+        logger.info("🌊 望潮 · 阅读有礼")
     lottery_names = [
         a.name for a in cfg.accounts if a.wants_lottery(cfg.do_lottery) and not args.dry_run
     ]

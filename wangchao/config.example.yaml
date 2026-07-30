@@ -19,6 +19,7 @@ accounts:
     # device_id: ""
     # proxy: ""                 # 可选；有独立出口时可给副号配 proxy 并 lottery: true
     # lottery: true             # 首号默认 true，一般不用写
+    # app_unique_id: ""         # App 内抓包的「设备唯一 sessionId」，用于 loginWC；未配置时回退到 vapp session
 
   - name: "号2"
     phone: "1yyyyyyyyyy"
@@ -49,6 +50,8 @@ api:
   account_interval: 20
   # init 被限流时的最大重试次数
   init_max_retries: 5
+  # 启动随机抖动秒数（默认 300），避免多账号固定 cron 集中请求触发风控
+  start_jitter: 300
 
 lottery:
   # 全局总开关；true 时仍只对「允许抽奖」的账号自动抽（默认仅首号）

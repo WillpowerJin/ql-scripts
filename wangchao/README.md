@@ -31,8 +31,11 @@
 1. `POST /api/account/init` 匿名 session（SHA256 签名）
 2. `passport.tmuyun.com` RSA 加密密码 → `credential_auth`
 3. `POST /api/zbtxz/login` 换正式 `account_id` / `session_id`
-4. 登录阅读有礼 H5 → 任务列表 → SM2 上报已读
-5. **仅允许抽奖的账号**执行 `loginWC` + `saveUpdate`（默认只有第 1 个号）
+4. **缓存 session 到本地**（默认 7 天），下次直接复用，避免每天重新登录换票
+5. 登录阅读有礼 H5 → 任务列表 → SM2 上报已读
+6. **仅允许抽奖的账号**执行 `loginWC` + `saveUpdate`（默认只有第 1 个号）
+
+> 为降低「检测到账号异常/仅限 APP」概率，抽奖接口保留含 `xsb_wangchao` 的 App UA + 包名 `X-Requested-With` + vapp 签名头，并去掉外部 H5 的 `Referer/Origin`；同时优先使用 App 内抓包的 `app_unique_id` 作为 `loginWC` 的 `sessionId`。
 
 ## 本地运行
 
@@ -136,6 +139,12 @@ BARK_GROUP=望潮阅读有礼
 跑完会推送摘要：各账号阅读进度、抽奖结果、错误信息。  
 未配置 `BARK_*` 时只打日志、不推送。
 
+账号增强（降低「账号异常」风控）：
+
+```text
+WANGCHAO_APP_UNIQUE_ID=xxx&yyy   # 与账号一一对应；App 内抓包的「设备唯一 sessionId」
+```
+
 其它可选：
 
 ```text
@@ -143,6 +152,7 @@ WANGCHAO_LOTTERY=0           # 关闭抽奖
 WANGCHAO_NOTIFY_DRY_RUN=1    # dry-run 时也推送（默认 dry-run 不推）
 WANGCHAO_ACCOUNT_INTERVAL=20 # 多账号间隔秒数（默认 20，防限流）
 WANGCHAO_INIT_RETRIES=5      # init 限流重试次数
+WANGCHAO_START_JITTER=300    # 启动随机抖动秒数（默认 300，错开多账号请求）
 WANGCHAO_PROXY=http://u:p@ip1:port&socks5://127.0.0.1:1080  # 与账号一一对应（可选）
 ```
 
@@ -167,7 +177,7 @@ SOCKS 代理需：`pip install "requests[socks]"`（或 `PySocks`）。
 | 定时 | `30 8 * * *`（每天 8:30） |
 | 命令 | `task …/wangchao/read_gift.py`（以脚本管理中实际路径为准） |
 
-## 备用：抓包 session
+## 备用：抓包 session / 设备唯一 ID
 
 密码登录异常时，可改用抓包字段：
 
@@ -180,6 +190,18 @@ accounts:
 ```
 
 过滤：`xmt.taizhou.com.cn/prod-api/user-read/app/login`。
+
+如果抽奖仍提示「账号异常」，建议补充抓取 App 内的**设备唯一 sessionId**（`loginWC` 的 `sessionId` 参数，不是 vapp session）：
+
+```yaml
+accounts:
+  - name: "主号"
+    phone: "1xxxxxxxxxx"
+    password: "xxx"
+    app_unique_id: "从抓包 /tzrb/user/loginWC 的 sessionId 复制"
+```
+
+过滤：`srv-app.taizhou.com.cn/tzrb/user/loginWC`。
 
 ## 常见问题
 
@@ -196,6 +218,8 @@ accounts:
 | 第二账号 init「操作过于频繁」 | 同 IP 连登限流；已自动间隔+重试，可加大 `WANGCHAO_ACCOUNT_INTERVAL` |
 | 第二账号抽奖「同一设备只能参加一次」 | **不是**阅读 `deviceId` 的问题。抽奖站按**出口 IP** 限制。脚本**默认已不对第 2/3… 号自动抽奖**；副号请用手机流量在 App 内手动抽，或配独立 `proxy` 后写 `lottery: true` |
 | 阅读有礼「同一设备」 | 脚本已为每号生成独立 `deviceId`/UA；与抽奖 IP 限制是两套逻辑 |
+| 抽奖「检测到账号异常，请今日到APP重新登录，明日可参与抽奖」 | 先在 App 内重新登录并手动抽一次清标记；然后在脚本中启用 **session 缓存**（已默认开启）+ 补充 `app_unique_id`（抓包 `loginWC` 的 `sessionId`） |
+| 每天早上固定时间跑后账号异常 | 启用 `WANGCHAO_START_JITTER` 错开请求，并把 cron 分散到 8:00~9:30 |
 
 ## 依赖
 
