@@ -9,8 +9,10 @@ new Env('八富看广告');
 依赖：requests
 
 环境变量：
-  YYB_GO          必填。code 服务地址@openid(ref)，多账号换行
-                  例：https://xxxx.example.com@owNAX6mkpZiXq4i9EP_tXp1KnxEk
+  YYB_GO          必填。code 服务@openid，多账号换行
+                  例：https://xxxx.example.com@owNAX6mk…#iPhone
+                  末尾 #备注 可选（如 iPhone / Android），会进日志和 Bark
+  BAFU_NOTE       可选。全局备注，出现在 Bark 标题（如 家里青龙）
   BARK_URL / BARK_KEY   通知（与 hifiti / bilibili / fanghua 共用）
   BARK_SERVER / BARK_GROUP  可选
   BFSH_INVITER_CODE     邀请码，默认 U75803F7
@@ -31,6 +33,7 @@ import os
 import random
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import quote
@@ -85,6 +88,13 @@ ACCOUNT_ICONS = "🍺🍷🍸🍹🥂🍶🧉☕🍵🥃"
 DRY_RUN = os.environ.get("DRY_RUN", "").strip() in ("1", "true", "True", "yes")
 INVITER_CODE = os.environ.get("BFSH_INVITER_CODE", "U75803F7").strip() or "U75803F7"
 FORCE_REBIND = os.environ.get("BFSH_FORCE_REBIND", "1").strip() != "0"
+# 全局备注（标题）；每账号备注见 YYB_GO 行尾 #xxx
+GLOBAL_NOTE = (
+    os.environ.get("BAFU_NOTE")
+    or os.environ.get("BFSH_NOTE")
+    or os.environ.get("BAFU_TAG")
+    or ""
+).strip()
 
 
 def resolve_session_cache_path() -> Path:
@@ -206,17 +216,48 @@ def send_bark(title: str, body: str) -> None:
 
 
 # ---------- YYB GO ----------
-def parse_yyb_go_env(line: str | None = None):
-    if line is None:
-        env = os.environ.get("YYB_GO", "").strip()
-    else:
-        env = line.strip()
-    if not env:
-        return None, None
+def parse_yyb_go_line(line: str) -> tuple[Optional[str], Optional[str], str]:
+    """
+    解析一行：https://host@openid  或  https://host@openid#备注
+    返回 (host_port, ref, note)
+    """
+    env = (line or "").strip()
+    if not env or env.startswith("#"):
+        return None, None, ""
+    note = ""
+    # 备注：最后一个 # 之后（openid 本身一般不含 #）
+    if "#" in env:
+        # 避免把 https:// 里的内容误切：只在 @ 之后找 #
+        at = env.find("@")
+        if at >= 0:
+            tail = env[at + 1 :]
+            if "#" in tail:
+                ref_part, note = tail.split("#", 1)
+                env = env[: at + 1] + ref_part
+                note = note.strip()
+        else:
+            env, note = env.rsplit("#", 1)
+            note = note.strip()
     if "@" in env:
         host_port, ref = env.split("@", 1)
-        return host_port.strip(), ref.strip()
-    return env, None
+        return host_port.strip(), ref.strip(), note
+    return env.strip() or None, None, note
+
+
+def parse_yyb_go_env(line: str | None = None):
+    """兼容旧接口：返回 (host_port, ref)。"""
+    if line is None:
+        raw = os.environ.get("YYB_GO", "").strip()
+        if not raw:
+            return None, None
+        # 取第一行有效配置
+        for ln in raw.splitlines():
+            h, r, _ = parse_yyb_go_line(ln)
+            if h and r:
+                return h, r
+        return None, None
+    h, r, _ = parse_yyb_go_line(line)
+    return h, r
 
 
 def get_yyb_wechat_code(ref, host_port, appid=APPID):
@@ -274,18 +315,22 @@ def load_accounts():
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            host_port, ref = parse_yyb_go_env(line)
+            host_port, ref, note = parse_yyb_go_line(line)
             if ref and host_port:
+                # 显示名：备注优先（iPhone / Android），否则 openid 前缀
+                display = note or (ref[:8] + "…")
                 accounts.append(
                     {
                         "openid": ref,
-                        "display_name": ref[:8] + "...",
+                        "display_name": display,
+                        "note": note,
                         "source": "yyb_go",
                         "ref": ref,
                         "host_port": host_port,
                     }
                 )
-                log(f"  📥 YYB_GO 账号: {ref[:8]}...")
+                extra = f" 备注={note}" if note else ""
+                log(f"  📥 账号: {display}  (openid {ref[:8]}…){extra}")
             else:
                 log(f"  ⚠️ YYB_GO 格式错误: {line}")
 
@@ -304,6 +349,7 @@ def load_accounts():
                     {
                         "openid": openid.strip(),
                         "display_name": name.strip(),
+                        "note": name.strip(),
                         "source": "env",
                     }
                 )
@@ -352,6 +398,7 @@ class BafuAccount:
     def __init__(self, acc):
         self.openid = acc.get("openid")
         self.display_name = acc.get("display_name") or self.openid or "?"
+        self.note = (acc.get("note") or "").strip()
         self.source = acc.get("source")
         self.ref = acc.get("ref") or self.openid
         self.host_port = acc.get("host_port")
@@ -660,7 +707,14 @@ class BafuAccount:
         return f"绑定失败:{msg}"
 
     def run(self):
-        result: dict[str, Any] = {"name": self.display_name, "watched": 0}
+        result: dict[str, Any] = {
+            "name": self.display_name,
+            "note": getattr(self, "note", "") or "",
+            "watched": 0,
+            "total_ads": 0,
+            "final_count": 0,
+            "ok": False,
+        }
         if not self.login():
             log(f"  ❌ 登录失败: {self.err or '登录失败'}")
             result["errors"] = [self.err or "登录失败"]
@@ -674,6 +728,8 @@ class BafuAccount:
         )
 
         watched = 0
+        final_count = 0
+        total_ads = 10
         while True:
             info = self.check_limit(adpid)
             if info is None:
@@ -687,12 +743,14 @@ class BafuAccount:
 
             count = info["count"]
             total = info["totalAds"]
+            final_count, total_ads = count, total
             log(
                 f"  📺 进度 {count}/{total} | limited={info['limited']} "
                 f"| needLogin={info['needLogin']} | adId={info['id']}"
             )
             if info["limited"] or count >= total:
                 log("  ✅ 今日广告已达上限")
+                result["ok"] = True
                 break
 
             if DRY_RUN:
@@ -700,6 +758,7 @@ class BafuAccount:
                 log(f"  🔍 DRY_RUN: 将观看 {remaining} 个（不实际 complete）")
                 result["watched"] = remaining
                 result["dry_run"] = True
+                result["ok"] = True
                 break
 
             if info["needLogin"]:
@@ -719,6 +778,7 @@ class BafuAccount:
                 result.setdefault("errors", []).append("第二次 checkLimit 失败")
                 break
             ad_task_id = info2["id"]
+            final_count, total_ads = info2["count"], info2["totalAds"]
             log(f"  📺 观看广告 adTaskId={ad_task_id}...")
             watch_time = AD_WATCH_SECONDS + random.uniform(1, 5)
             log(f"  ⏳ 等待 {watch_time:.0f}s...")
@@ -727,6 +787,7 @@ class BafuAccount:
             ok, msg = self.complete(adpid, ad_task_id, info2["needLogin"])
             if ok:
                 watched += 1
+                final_count = min(total_ads, final_count + 1)
                 log(f"  ✅ 完成第 {watched} 个: {msg}")
             elif _need_first_verify(msg):
                 log(f"  ⚠️ 首次验证: {msg}")
@@ -748,40 +809,115 @@ class BafuAccount:
             time.sleep(gap)
 
         result["watched"] = watched
+        result["final_count"] = final_count
+        result["total_ads"] = total_ads
+        if watched > 0 and not result.get("errors"):
+            result["ok"] = True
+        elif result.get("ok") is not True and not result.get("errors") and not result.get("skipped"):
+            result["ok"] = True
         return result
+
+
+def _bark_title(ok_all: bool, n: int, ok_n: int) -> str:
+    note = f" · {GLOBAL_NOTE}" if GLOBAL_NOTE else ""
+    if n == 0:
+        return f"八富看广告{note}"
+    if ok_n == n:
+        return f"八富看广告 ✅{note}"
+    if ok_n == 0:
+        return f"八富看广告 ❌{note}"
+    return f"八富看广告 ⚠️ {ok_n}/{n}{note}"
 
 
 def push_summary(results):
     if not results:
         return
-    lines = ["📣 八富看广告 汇总", "─" * 28]
+    now = datetime.now().strftime("%m-%d %H:%M")
+    n = len(results)
+    ok_n = 0
+    fail_n = 0
+    skip_n = 0
+    total_watched = 0
+    for r in results:
+        total_watched += int(r.get("watched") or 0)
+        if r.get("skipped"):
+            skip_n += 1
+        elif r.get("errors"):
+            fail_n += 1
+        else:
+            ok_n += 1
+
+    lines: list[str] = []
+    lines.append("🎬 八富生活 · 看广告汇总")
+    if GLOBAL_NOTE:
+        lines.append(f"🏷️ 备注：{GLOBAL_NOTE}")
+    lines.append(f"📅 {now}")
+    lines.append("────────────────")
+    lines.append("")
+
     for i, r in enumerate(results):
         icon = ACCOUNT_ICONS[i % len(ACCOUNT_ICONS)]
-        name = r.get("name", "?")
-        line = f"{icon} {name}"
+        name = r.get("name") or "?"
+        note = (r.get("note") or "").strip()
+        # 标题行：图标 + 备注名
+        head = f"{icon} 【{name}】"
+        if note and note != name:
+            head += f"  📱{note}"
+        lines.append(head)
+
         if r.get("skipped"):
-            line += f"  ⏭️ {r['skipped']}"
+            lines.append(f"   ⏭️ 跳过：{r['skipped']}")
         elif r.get("errors"):
-            line += "  ⚠️ " + "; ".join(r["errors"])
+            err = "; ".join(r["errors"])
+            if len(err) > 80:
+                err = err[:77] + "…"
+            lines.append("   ❌ 状态：异常")
+            lines.append(f"   💬 {err}")
+        elif r.get("dry_run"):
+            lines.append(f"   🔍 DRY_RUN 将看 {r.get('watched', 0)} 条")
         else:
-            watched = r.get("watched", 0)
-            if r.get("dry_run"):
-                line += f"  🔍 将看{watched}个"
+            w = int(r.get("watched") or 0)
+            fc = r.get("final_count")
+            ta = r.get("total_ads") or 10
+            if w > 0:
+                lines.append(f"   ✅ 本次完成：{w} 条广告")
             else:
-                line += f"  观看{watched}个✓"
+                lines.append("   ✅ 状态：正常（无需再看或已满）")
+            if fc is not None:
+                lines.append(f"   📊 今日进度：{fc}/{ta}")
+
         inv = r.get("inviter")
         if inv:
-            line += f"  | 邀请:{inv}"
-        lines.append(line)
-        lines.append("─" * 28)
+            lines.append(f"   🤝 邀请：{inv}")
+
+        if i < n - 1:
+            lines.append("")
+
+    lines.append("")
+    lines.append("────────────────")
+    lines.append(
+        f"📦 账号 {n} 个 · ✅{ok_n}  ❌{fail_n}"
+        + (f"  ⏭️{skip_n}" if skip_n else "")
+    )
+    lines.append(f"🎯 合计观看：{total_watched} 条")
+    if fail_n == 0 and skip_n == 0:
+        lines.append("🎉 全部顺利")
+    elif ok_n == 0:
+        lines.append("😿 请检查 YYB_GO / 首次验证")
+    else:
+        lines.append("💡 部分账号需关注日志")
+
     text = "\n".join(lines)
     log("")
     log(text)
-    send_bark("八富看广告", text)
+    title = _bark_title(fail_n == 0 and skip_n == 0, n, ok_n)
+    send_bark(title, text)
 
 
 def main() -> int:
     log("🚀 八富看广告 ads_yyb")
+    if GLOBAL_NOTE:
+        log(f"🏷️ 全局备注: {GLOBAL_NOTE}")
     log(f"📁 会话缓存: {resolve_session_cache_path()}")
     if _bark_endpoint():
         log("📣 Bark 已配置")
@@ -795,9 +931,10 @@ def main() -> int:
     accounts = load_accounts()
     if not accounts:
         log("❌ 未配置账号：请设置 YYB_GO")
-        log("   格式: YYB_GO=https://code服务地址@openid")
-        log("   多账号换行")
-        send_bark("八富看广告 · 失败", "未配置 YYB_GO")
+        log("   格式: https://code服务@openid")
+        log("   带备注: https://code服务@openid#iPhone")
+        log("   多账号换行；全局备注: BAFU_NOTE=家里青龙")
+        send_bark(_bark_title(False, 0, 0), "❌ 未配置 YYB_GO\n请设置环境变量后重试")
         return 1
 
     log(f"📋 {len(accounts)} 个账号（来源：{accounts[0]['source']}）")
@@ -807,8 +944,14 @@ def main() -> int:
         a = BafuAccount(acc)
         try:
             r = a.run()
+            r.setdefault("note", a.note)
+            r.setdefault("name", a.display_name)
         except Exception as e:
-            r = {"name": a.display_name, "errors": [f"异常: {e}"]}
+            r = {
+                "name": a.display_name,
+                "note": a.note,
+                "errors": [f"异常: {e}"],
+            }
             log(f"  ❌ 异常: {e}")
         results.append(r)
 
