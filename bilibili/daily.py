@@ -191,6 +191,12 @@ class NotifyConfig:
     serverchan_key: str = ""
     webhook_url: str = ""
 
+    def has_bark(self) -> bool:
+        return bool((self.bark_url or "").strip() or (self.bark_key or "").strip())
+
+    def enabled(self) -> bool:
+        return self.has_bark() or bool(self.serverchan_key) or bool(self.webhook_url)
+
 
 @dataclass
 class GeetestConfig:
@@ -371,24 +377,49 @@ def load_config_yaml(path: Path) -> AppConfig:
     )
 
 
+def _merge_notify(base: NotifyConfig, overlay: NotifyConfig) -> NotifyConfig:
+    """环境变量优先覆盖 yaml。"""
+    if not overlay.enabled():
+        return base
+    return NotifyConfig(
+        bark_url=overlay.bark_url or base.bark_url,
+        bark_key=overlay.bark_key or base.bark_key,
+        bark_server=overlay.bark_server or base.bark_server,
+        bark_group=(
+            overlay.bark_group
+            if _env("BARK_GROUP") or overlay.bark_group != "B站每日任务"
+            else base.bark_group
+        ),
+        bark_sound=overlay.bark_sound or base.bark_sound,
+        bark_icon=overlay.bark_icon or base.bark_icon,
+        bark_level=overlay.bark_level or base.bark_level,
+        serverchan_key=overlay.serverchan_key or base.serverchan_key,
+        webhook_url=overlay.webhook_url or base.webhook_url,
+    )
+
+
 def load_config(path: Optional[Path] = None) -> AppConfig:
     env_cfg = load_config_from_env()
+    env_notify = load_notify_from_env()
     yaml_path = path or (SCRIPT_DIR / "config.yaml")
     if yaml_path.is_file():
         cfg = load_config_yaml(yaml_path)
         if env_cfg and env_cfg.accounts:
-            # 环境变量账号优先合并：同名覆盖
             by_name = {a.name: a for a in cfg.accounts}
             for a in env_cfg.accounts:
                 by_name[a.name] = a
             cfg.accounts = list(by_name.values())
-            if env_cfg.notify.bark_url or env_cfg.notify.bark_key:
-                cfg.notify = env_cfg.notify
+        # 无论有没有账号环境变量，都合并 Bark（青龙只配 BARK_KEY 的常见情况）
+        cfg.notify = _merge_notify(cfg.notify, env_notify)
         return cfg
     if env_cfg:
+        env_cfg.notify = _merge_notify(env_cfg.notify, env_notify)
         return env_cfg
-    # 无配置时仍可 --qr 写缓存
-    return AppConfig(accounts=[Account(name="主号")])
+    # 仅 Cookie 缓存 + 环境变量 Bark（无 config.yaml / 无 BILI_* 账号）
+    return AppConfig(
+        accounts=[Account(name="主号")],
+        notify=env_notify,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -562,48 +593,83 @@ def merge_account_credentials(acc: Account) -> Account:
 
 
 # ---------------------------------------------------------------------------
-# 通知
+# 通知（对齐 hifiti：优先 POST JSON，多行正文 / emoji 更稳）
 # ---------------------------------------------------------------------------
 
+def _build_bark_endpoint(cfg: NotifyConfig) -> Optional[str]:
+    """返回 Bark 推送根地址，如 https://api.day.app/KEY 或完整 BARK_URL。"""
+    if cfg.bark_url:
+        url = cfg.bark_url.strip().rstrip("/")
+        # BARK_URL 写成 key 无 http 时已在 load_notify 归到 bark_key
+        if url.startswith("http"):
+            return url
+    if cfg.bark_key:
+        server = (cfg.bark_server or DEFAULT_BARK_SERVER).rstrip("/")
+        return f"{server}/{cfg.bark_key.strip()}"
+    return None
+
+
+def send_bark(cfg: NotifyConfig, title: str, body: str) -> None:
+    endpoint = _build_bark_endpoint(cfg)
+    if not endpoint:
+        return
+
+    # 官方推荐 POST；body 可含换行与 emoji
+    payload: dict[str, Any] = {
+        "title": title[:200],
+        "body": body[:3500],
+        "group": cfg.bark_group or "B站每日任务",
+    }
+    if cfg.bark_sound:
+        payload["sound"] = cfg.bark_sound
+    if cfg.bark_icon:
+        payload["icon"] = cfg.bark_icon
+    if cfg.bark_level:
+        payload["level"] = cfg.bark_level
+
+    try:
+        r = requests.post(endpoint, json=payload, timeout=15)
+        if r.status_code >= 400:
+            # 兼容部分自建/旧接口：GET /:key/:title/:body
+            get_url = (
+                f"{endpoint.rstrip('/')}/"
+                f"{quote(title[:100], safe='')}/"
+                f"{quote(body[:500], safe='')}"
+            )
+            params = {"group": payload["group"]}
+            r = requests.get(get_url, params=params, timeout=15)
+        ok = r.status_code < 400
+        logger.info(
+            "📣 Bark %s（HTTP %s）→ %s",
+            "已推送" if ok else "失败",
+            r.status_code,
+            endpoint[:48] + ("…" if len(endpoint) > 48 else ""),
+        )
+        if not ok:
+            logger.warning("Bark 响应: %s", (r.text or "")[:200])
+    except Exception as e:
+        logger.warning("📣 Bark 推送失败: %s", e)
+
+
 def send_notify(cfg: NotifyConfig, title: str, body: str) -> None:
-    if cfg.bark_url or cfg.bark_key:
-        try:
-            if cfg.bark_url:
-                url = cfg.bark_url.rstrip("/")
-                if url.endswith(cfg.bark_key) if cfg.bark_key else False:
-                    push = f"{url}/{quote(title)}/{quote(body)}"
-                else:
-                    # 完整 URL 或 server/key
-                    if cfg.bark_key and cfg.bark_key not in url:
-                        push = f"{url.rstrip('/')}/{cfg.bark_key}/{quote(title)}/{quote(body)}"
-                    else:
-                        push = f"{url}/{quote(title)}/{quote(body)}"
-            else:
-                push = (
-                    f"{cfg.bark_server.rstrip('/')}/{cfg.bark_key}/"
-                    f"{quote(title)}/{quote(body)}"
-                )
-            params = {}
-            if cfg.bark_group:
-                params["group"] = cfg.bark_group
-            if cfg.bark_sound:
-                params["sound"] = cfg.bark_sound
-            if cfg.bark_icon:
-                params["icon"] = cfg.bark_icon
-            if cfg.bark_level:
-                params["level"] = cfg.bark_level
-            requests.get(push, params=params or None, timeout=10)
-        except Exception as e:
-            logger.warning("Bark 通知失败: %s", e)
+    if not cfg.enabled():
+        logger.info(
+            "📣 未配置通知（BARK_URL / BARK_KEY），跳过推送。"
+            "青龙请在「环境变量」添加与 hifiti 相同的 BARK_KEY 或 BARK_URL"
+        )
+        return
+    if cfg.has_bark():
+        send_bark(cfg, title, body)
     if cfg.webhook_url:
         try:
-            requests.post(
+            r = requests.post(
                 cfg.webhook_url,
                 json={"title": title, "content": body},
                 timeout=10,
             )
+            logger.info("📣 Webhook 已推送（HTTP %s）", r.status_code)
         except Exception as e:
-            logger.warning("Webhook 失败: %s", e)
+            logger.warning("📣 Webhook 失败: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -1697,6 +1763,8 @@ def main() -> int:
     cfg = load_config(args.config)
     if args.coin is not None:
         cfg.coin_num = max(0, min(5, args.coin))
+    # 再保险：运行时环境变量覆盖（青龙任务内注入 BARK_*）
+    cfg.notify = _merge_notify(cfg.notify, load_notify_from_env())
 
     accounts = pick_accounts(cfg, args.account)
     if not accounts:
@@ -1708,6 +1776,14 @@ def main() -> int:
     need_cookie = False
 
     logger.info("Cookie 缓存路径: %s", resolve_cache_path())
+    if cfg.notify.has_bark():
+        ep = _build_bark_endpoint(cfg.notify) or ""
+        logger.info(
+            "通知: Bark 已配置 → %s",
+            ep[:40] + ("…" if len(ep) > 40 else ""),
+        )
+    else:
+        logger.info("通知: 未配置 BARK_URL/BARK_KEY（跑完不会推送）")
     logger.info("本次共 %s 个账号", len(accounts))
     for i, a in enumerate(accounts, 1):
         mid = _mid_from_cookie(a.cookie) if a.has_cookie() else "-"
@@ -1764,9 +1840,12 @@ def main() -> int:
         title = "B站每日任务 · 有未完成项"
     else:
         title = "B站每日任务 · 完成 ✅"
-    print("=" * 40)
-    print(body)
-    send_notify(cfg.notify, title, body[:1500])
+    print("=" * 40, flush=True)
+    print(body, flush=True)
+    try:
+        send_notify(cfg.notify, title, body)
+    except Exception as e:
+        logger.warning("通知异常: %s", e)
     return 1 if any_fail else 0
 
 
