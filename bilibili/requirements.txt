@@ -1,5 +1,7 @@
 requests>=2.28.0
+# daily.py 账密登录需要：
 cryptography>=41.0.0
 PyYAML>=6.0
+# get_cookie 终端二维码（可选，没有则仍有在线图片链接）：
 qrcode>=7.4
 Pillow>=10.0

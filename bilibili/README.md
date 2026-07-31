@@ -4,8 +4,8 @@
 
 | 脚本 | 说明 | 运行方式 |
 |------|------|----------|
-| [`get_cookie.py`](./get_cookie.py) | 手机 B 站**扫码**拿 Cookie | **手动**（失效时跑） |
-| [`daily.py`](./daily.py) | 每日经验 / 扩展任务 | **定时** cron |
+| [`get_cookie.py`](./get_cookie.py) | 手机 B 站**扫码**拿 Cookie（**可单独运行，不依赖 daily.py**） | **手动**（失效时跑） |
+| [`daily.py`](./daily.py) | 每日经验 / 扩展任务（读同一 Cookie 文件） | **定时** cron |
 
 > 仅供学习研究。请遵守 B 站用户协议。
 
@@ -57,23 +57,28 @@
 | 黑名单 | `README\|config\|example\|requirements\|\.md\|\.yaml\|cookie_cache\|login_qr` |
 | 扩展名 | `py` |
 
-依赖：青龙「依赖管理」安装 `requests` `cryptography` `qrcode` `Pillow` `PyYAML`（或任务里 `pip install`）。
+依赖：
+
+| 脚本 | 最少依赖 | 可选 |
+|------|----------|------|
+| `get_cookie.py`（独立） | `requests` | `qrcode` `Pillow`（终端画码） |
+| `daily.py` | `requests` `cryptography` | `PyYAML` `qrcode` |
 
 ### 任务建议
 
 | 任务名 | 命令 | 定时 |
 |--------|------|------|
-| B站获取Cookie | `task .../bilibili/get_cookie.py` | **禁用定时**，需要时手动运行 |
-| B站每日任务 | `task .../bilibili/daily.py` | `30 7 * * *` |
+| B站获取Cookie | `python3 -u .../bilibili/get_cookie.py` | **禁用定时**，需要时手动运行 |
+| B站每日任务 | `.../bilibili/daily.py` | `30 7 * * *` |
+
+**只订阅扫码脚本时**白名单可写：`get_cookie`（不必带 daily）。
 
 **脚本调试没有日志时：**
 
-1. 确认同目录有 `daily.py`（订阅白名单含 `bilibili`）  
-2. 依赖管理安装：`requests` `cryptography` `qrcode` `Pillow` `PyYAML`  
-3. 命令建议加无缓冲：`python3 -u get_cookie.py`（或任务前缀 `python3 -u`）  
-4. 成功启动时日志**第一行**应是：`[get_cookie] start`  
-   - 若连这行都没有：看的是旧文件 / 跑错任务 / 未保存订阅  
-   - 若有 start 随后报 import：按提示装依赖
+1. `get_cookie.py` **可单文件运行**，不再依赖 `daily.py`  
+2. 至少安装 `requests`；要日志里 ASCII 码再装 `qrcode` `Pillow`  
+3. 命令用：`python3 -u get_cookie.py`  
+4. 日志应出现：`[get_cookie] start`；若没有 → 未真正运行 / 看错面板（请用**定时任务 → 日志**）  
 
 可选环境变量：
 
