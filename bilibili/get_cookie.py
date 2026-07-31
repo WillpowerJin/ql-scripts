@@ -81,6 +81,8 @@ try:
     from daily import (  # noqa: E402
         Account,
         BiliClient,
+        list_cached_accounts,
+        load_cache,
         load_config,
         load_notify_from_env,
         merge_account_credentials,
@@ -164,15 +166,32 @@ def main() -> int:
     if name:
         accs = [a for a in cfg.accounts if a.name == name]
         acc = accs[0] if accs else Account(name=name)
+        emit(f"[*] 指定备注名: {name}（同一 B 站号重复扫会更新，不会重复两条）")
     else:
-        acc = cfg.accounts[0] if cfg.accounts else Account(name="主号")
+        # 空名称：扫码成功后用 B 站昵称建档；重复扫同一号按 mid 更新
+        acc = Account(name="")
+        emit("[*] 未指定 --account：将用 B 站昵称区分账号（推荐多账号）")
     acc.normalize()
 
     cache = resolve_cache_path()
-    emit(f"[*] 账号备注: {acc.name}")
-    emit(f"[*] Cookie 保存: {cache}")
+    existing = list_cached_accounts()
+    emit(f"[*] Cookie 文件: {cache}")
+    emit(f"[*] 当前已缓存 {len(existing)} 个账号:")
+    if existing:
+        for a in existing:
+            mid = ""
+            try:
+                from daily import parse_cookie
+
+                mid = parse_cookie(a.cookie).get("DedeUserID") or ""
+            except Exception:
+                pass
+            emit(f"    - {a.name}" + (f"  mid={mid}" if mid else ""))
+    else:
+        emit("    （暂无，扫码后写入）")
     emit("")
     emit("步骤: 手机打开 哔哩哔哩 -> 扫一扫 -> 扫日志里的码 -> 点确认")
+    emit("换号: 手机退出/换号后再扫一次即可新增；同一号再扫=更新 Cookie")
     emit("不要用电脑浏览器打开 passport 登录链接")
     emit("")
 
@@ -267,25 +286,34 @@ def main() -> int:
         emit("")
         return 1
 
-    uname = client2.user.get("uname") or acc.name
+    uname = client2.user.get("uname") or client2.account.name or acc.name
     mid = client2.user.get("mid") or ""
     elapsed = int(time.time() - t0)
+    all_now = list_cached_accounts()
     emit("")
     emit("=" * 44)
     emit("  OK  Cookie 获取成功")
     emit("=" * 44)
-    emit(f"用户: {uname}" + (f"  mid={mid}" if mid else ""))
-    emit(f"保存: {cache}")
+    emit(f"用户昵称: {uname}" + (f"  mid={mid}" if mid else ""))
+    emit(f"缓存键/备注: {client2.account.name}")
+    emit(f"保存文件: {cache}")
     emit(f"耗时: 约 {elapsed}s")
+    emit(f"缓存中共 {len(all_now)} 个账号（daily.py 会全部执行）:")
+    for a in all_now:
+        mark = " <- 本次" if a.name == client2.account.name or a.name == uname else ""
+        emit(f"    - {a.name}{mark}")
     emit("")
-    emit("下一步: 运行 daily.py 做每日任务")
+    emit("下一步: 运行 daily.py（多账号会依次做任务，日志用昵称区分）")
     emit("")
 
     try:
         send_notify(
             cfg.notify,
             "B站Cookie获取成功",
-            f"用户：{uname}\n保存：{cache}\n可运行 daily.py",
+            f"用户：{uname} mid={mid}\n"
+            f"缓存共 {len(all_now)} 个号\n"
+            f"保存：{cache}\n"
+            f"可运行 daily.py",
         )
     except Exception:
         pass

@@ -418,25 +418,144 @@ def cache_get(name: str) -> dict[str, Any]:
     return (load_cache().get("accounts") or {}).get(name) or {}
 
 
-def cache_set(name: str, cookie: str, access_token: str = "") -> None:
+def _mid_from_cookie(cookie: str) -> str:
+    return str(parse_cookie(cookie).get("DedeUserID") or "").strip()
+
+
+def find_cache_key_by_mid(mid: str) -> Optional[str]:
+    """按 B 站 uid(mid) 查找已有缓存键，用于多账号去重。"""
+    mid = str(mid or "").strip()
+    if not mid:
+        return None
+    for key, ent in (load_cache().get("accounts") or {}).items():
+        if not isinstance(ent, dict):
+            continue
+        if str(ent.get("mid") or "").strip() == mid:
+            return str(key)
+        cmid = _mid_from_cookie(str(ent.get("cookie") or ""))
+        if cmid == mid:
+            return str(key)
+    return None
+
+
+def cache_upsert(
+    cookie: str,
+    access_token: str = "",
+    *,
+    preferred_name: str = "",
+    mid: str = "",
+    uname: str = "",
+) -> tuple[str, str]:
+    """
+    写入/更新 Cookie 缓存。
+    以 mid(DedeUserID) 判断是否同一账号：
+      - 已存在 → 更新该条（避免重复扫码变成两个号）
+      - 新 mid → 新增一条
+    存储键优先：preferred_name（用户指定）→ 已有键 → uname → mid。
+
+    返回 (storage_key, action)  action: new | update
+    """
+    mid = str(mid or _mid_from_cookie(cookie) or "").strip()
+    uname = str(uname or "").strip()
+    preferred_name = str(preferred_name or "").strip()
+    # 占位名不当作真实备注
+    if preferred_name in ("主号", "扫码待识别", "account", "account_1"):
+        # 若已有同 mid，保留旧键；否则用 uname
+        preferred_name = ""
+
     data = load_cache()
-    accounts = data.setdefault("accounts", {})
-    accounts[name] = {
+    accounts: dict[str, Any] = data.setdefault("accounts", {})
+    existing_key = find_cache_key_by_mid(mid) if mid else None
+
+    if existing_key:
+        key = preferred_name or existing_key
+        if preferred_name and preferred_name != existing_key:
+            # 用户指定新备注：迁到新键
+            if existing_key in accounts and preferred_name not in accounts:
+                accounts[preferred_name] = accounts.pop(existing_key)
+            key = preferred_name
+        elif not preferred_name and uname and existing_key in (
+            "主号",
+            "扫码待识别",
+            mid,
+        ):
+            # 把临时键升级为昵称
+            if uname != existing_key and uname not in accounts:
+                accounts[uname] = accounts.pop(existing_key)
+                key = uname
+            else:
+                key = existing_key
+        action = "update"
+    else:
+        key = preferred_name or uname or mid or f"account_{len(accounts) + 1}"
+        # 避免覆盖不同 mid 的同名键
+        if key in accounts:
+            old_mid = str(accounts[key].get("mid") or "") or _mid_from_cookie(
+                str(accounts[key].get("cookie") or "")
+            )
+            if old_mid and mid and old_mid != mid:
+                key = f"{key}_{mid}" if mid else f"{key}_{len(accounts) + 1}"
+        action = "new"
+
+    prev = accounts.get(key) if isinstance(accounts.get(key), dict) else {}
+    accounts[key] = {
         "cookie": cookie,
-        "access_token": access_token,
+        "access_token": access_token or prev.get("access_token") or "",
+        "mid": mid or prev.get("mid") or "",
+        "uname": uname or prev.get("uname") or "",
         "updated_at": now_str(),
     }
     data["updated_at"] = now_str()
     save_cache(data)
+    return key, action
+
+
+def cache_set(name: str, cookie: str, access_token: str = "") -> None:
+    """兼容旧调用：按 name 写入，仍会按 mid 去重合并。"""
+    mid = _mid_from_cookie(cookie)
+    cache_upsert(
+        cookie,
+        access_token,
+        preferred_name=name,
+        mid=mid,
+    )
+
+
+def list_cached_accounts() -> list[Account]:
+    """缓存中所有带 Cookie 的账号（供 daily 多账号遍历）。"""
+    out: list[Account] = []
+    for key, ent in (load_cache().get("accounts") or {}).items():
+        if not isinstance(ent, dict):
+            continue
+        ck = str(ent.get("cookie") or "").strip()
+        if not ck:
+            continue
+        uname = str(ent.get("uname") or "").strip()
+        display = uname or str(key)
+        acc = Account(
+            name=display,
+            cookie=ck,
+            access_token=str(ent.get("access_token") or ""),
+        )
+        acc.normalize()
+        out.append(acc)
+    return out
 
 
 def merge_account_credentials(acc: Account) -> Account:
-    """配置 Cookie 优先；否则用缓存。"""
+    """配置 Cookie 优先；否则按 name / 缓存匹配。"""
     if acc.has_cookie():
         return acc
     cached = cache_get(acc.name)
-    if cached.get("cookie"):
-        acc.cookie = str(cached["cookie"])
+    if not cached.get("cookie"):
+        # 用配置名对不上时，尝试缓存里唯一一条
+        all_acc = list_cached_accounts()
+        if len(all_acc) == 1:
+            acc.cookie = all_acc[0].cookie
+            acc.access_token = acc.access_token or all_acc[0].access_token
+            return acc
+        return acc
+    acc.cookie = str(cached["cookie"])
     if not acc.access_token and cached.get("access_token"):
         acc.access_token = str(cached["access_token"])
     return acc
@@ -717,8 +836,39 @@ class BiliClient:
                 ck = cookie_header(jar)
                 self.account.cookie = ck
                 self.account.access_token = self.access_token
-                cache_set(self.account.name, ck, self.access_token)
-                logger.info("扫码登录成功 → %s", resolve_cache_path())
+                # 拉昵称，按 mid 去重写入（多账号 / 重复扫同一号）
+                mid = jar.get("DedeUserID") or ""
+                uname = ""
+                try:
+                    if self.me():
+                        uname = str(self.user.get("uname") or "")
+                        mid = str(self.user.get("mid") or mid)
+                except Exception:
+                    pass
+                key, action = cache_upsert(
+                    ck,
+                    self.access_token,
+                    preferred_name=self.account.name,
+                    mid=str(mid),
+                    uname=uname,
+                )
+                self.account.name = key
+                if action == "update":
+                    logger.info(
+                        "扫码成功：更新已有账号 [%s] mid=%s uname=%s → %s",
+                        key,
+                        mid,
+                        uname or "?",
+                        resolve_cache_path(),
+                    )
+                else:
+                    logger.info(
+                        "扫码成功：新增账号 [%s] mid=%s uname=%s → %s",
+                        key,
+                        mid,
+                        uname or "?",
+                        resolve_cache_path(),
+                    )
                 for p in (QR_PNG_PATH, QR_HTML_PATH):
                     try:
                         if p.is_file():
@@ -1466,12 +1616,63 @@ class BiliClient:
 # ---------------------------------------------------------------------------
 
 def pick_accounts(cfg: AppConfig, only: str = "") -> list[Account]:
-    accs = list(cfg.accounts)
+    """
+    合并「配置账号」+「Cookie 缓存中的全部账号」。
+    同一 mid 只保留一条；有 Cookie 的才会进入任务列表。
+    """
+    by_mid: dict[str, Account] = {}
+    order: list[str] = []
+
+    def _add(acc: Account) -> None:
+        acc.normalize()
+        if not acc.has_cookie():
+            acc = merge_account_credentials(acc)
+        if not acc.has_cookie() and not acc.has_password():
+            return
+        mid = _mid_from_cookie(acc.cookie) if acc.has_cookie() else ""
+        uid = mid or f"name:{acc.name}"
+        if uid in by_mid:
+            # 已有则合并 token/name（昵称优先）
+            old = by_mid[uid]
+            if acc.access_token and not old.access_token:
+                old.access_token = acc.access_token
+            if acc.cookie:
+                old.cookie = acc.cookie
+            # 显示名：更像昵称的覆盖「主号」
+            if old.name in ("主号", "扫码待识别") and acc.name not in (
+                "主号",
+                "扫码待识别",
+            ):
+                old.name = acc.name
+            return
+        by_mid[uid] = acc
+        order.append(uid)
+
+    for acc in cfg.accounts:
+        _add(Account(
+            name=acc.name,
+            cookie=acc.cookie,
+            username=acc.username,
+            password=acc.password,
+            access_token=acc.access_token,
+        ))
+    for acc in list_cached_accounts():
+        _add(acc)
+
+    accs = [by_mid[k] for k in order]
     if only:
-        accs = [a for a in accs if a.name == only]
-        if not accs:
-            raise SystemExit(f"未找到账号: {only}")
-    return [merge_account_credentials(a) for a in accs]
+        only = only.strip()
+        filtered = [
+            a
+            for a in accs
+            if a.name == only
+            or only in a.name
+            or _mid_from_cookie(a.cookie) == only
+        ]
+        if not filtered:
+            raise SystemExit(f"未找到账号: {only}（可用昵称 / mid / 缓存键）")
+        return filtered
+    return accs
 
 
 def main() -> int:
@@ -1507,6 +1708,10 @@ def main() -> int:
     need_cookie = False
 
     logger.info("Cookie 缓存路径: %s", resolve_cache_path())
+    logger.info("本次共 %s 个账号", len(accounts))
+    for i, a in enumerate(accounts, 1):
+        mid = _mid_from_cookie(a.cookie) if a.has_cookie() else "-"
+        logger.info("  %s) %s  mid=%s  cookie=%s", i, a.name, mid or "?", "有" if a.has_cookie() else "无")
 
     for acc in accounts:
         logger.info("======== %s ========", acc.name)
