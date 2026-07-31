@@ -68,7 +68,7 @@
 
 | 任务名 | 命令 | 定时 |
 |--------|------|------|
-| B站获取Cookie | `python3 -u .../bilibili/get_cookie.py` | **禁用定时**，需要时手动运行 |
+| B站获取Cookie | `python3 -u .../bilibili/get_cookie.py` | 拉库后请在面板 **禁用定时**，需要时手动运行（文件内 cron 为永不触发的占位，避免「添加失败 Validation failed」） |
 | B站每日任务 | `.../bilibili/daily.py` | `30 7 * * *` |
 
 **只订阅扫码脚本时**白名单可写：`get_cookie`（不必带 daily）。
