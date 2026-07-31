@@ -24,9 +24,24 @@ from typing import Any, Optional
 from urllib.parse import urljoin
 
 import requests
-from Crypto.Cipher import AES, PKCS1_v1_5
-from Crypto.PublicKey import RSA
-from Crypto.Util.Padding import pad, unpad
+
+# 青龙依赖请装「pycryptodome」（import 名是 Crypto），不是名为 Crypto 的包
+try:
+    from Crypto.Cipher import AES, PKCS1_v1_5
+    from Crypto.PublicKey import RSA
+    from Crypto.Util.Padding import pad, unpad
+except ImportError:
+    try:
+        # 若装的是 pycryptodomex
+        from Cryptodome.Cipher import AES, PKCS1_v1_5  # type: ignore
+        from Cryptodome.PublicKey import RSA  # type: ignore
+        from Cryptodome.Util.Padding import pad, unpad  # type: ignore
+    except ImportError as e:
+        raise ImportError(
+            "缺少加解密库。请在青龙「依赖管理」安装 Python 模块：pycryptodome\n"
+            "（不要装名叫 crypto / Crypto 的其它包；正确的是 pycryptodome）\n"
+            f"原始错误: {e}"
+        ) from e
 
 # 从 App 原生插件 com.plugin.apisecurity 导出（随 APK 分发）
 RSA_PUBLIC_KEY_PEM = """-----BEGIN PUBLIC KEY-----

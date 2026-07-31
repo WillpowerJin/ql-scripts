@@ -51,7 +51,7 @@
 链接：     https://github.com/WillpowerJin/ql-scripts.git
 分支：     main
 白名单：   hifiti|wangchao|xijiu|quark|bilibili|fanghua
-黑名单：   pull_access_token
+黑名单：   pull_access_token|crypto_api
 扩展名：   py
 定时规则： 30 8 * * *
 ```
@@ -60,7 +60,7 @@
 |------|------|
 | 链接 | 只要 git 地址；不要填 README 网页，也不要整段 `ql repo ...` |
 | 白名单 | 用**目录名**，一次拉齐该目录下入口脚本 |
-| 黑名单 | 去掉 `xijiu/pull_access_token.py`（仅本地 root 抠 token 用） |
+| 黑名单 | `pull_access_token`（本地抠 token）、`crypto_api`（芳华库文件，不是任务） |
 | 扩展名 | 填 `py`，避免把 md/yaml 拉进脚本列表 |
 | 定时 | 只控制「自动拉库」，**不是**各业务任务的 cron |
 

@@ -30,19 +30,33 @@ API：`https://api.cdwjyyh.com`
 会拉到：
 
 ```text
-…/fanghua/main.py
-…/fanghua/crypto_api.py
+…/fanghua/main.py          ← 只把这个建成「定时任务」
+…/fanghua/crypto_api.py    ← 库文件，被 main import，不要单独当任务跑
+```
+
+订阅**黑名单**请加上 `crypto_api`（否则青龙会把库文件也加成定时任务）：
+
+```text
+pull_access_token|crypto_api
 ```
 
 ### 依赖
 
-青龙「依赖管理」安装：
+青龙「依赖管理」→ 类型选 **python3** → 名称填：
 
 ```text
 requests
 pycryptodome
-PyYAML
 ```
+
+注意：
+
+| 正确 | 错误 |
+|------|------|
+| 模块名 **`pycryptodome`** | 填 `Crypto` / `crypto`（容易装错包） |
+| 装完后 `import Crypto` 应成功 | 装了别的 `crypto` 仍报 `No module named 'Crypto'` |
+
+装完可在青龙依赖里看是否显示 `pycryptodome`；或任务日志不再报 `Crypto` 缺失。
 
 ### 环境变量（账号）
 
