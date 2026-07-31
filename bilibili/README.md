@@ -94,12 +94,13 @@ uv run daily.py
 uv run daily.py --info-only
 ```
 
-扫码时：
+扫码时（`get_cookie.py`）：
 
-- 终端会画二维码；并生成 `login_qr.png`（电脑打开后用手机扫）  
-- **不要**用浏览器打开 `passport.../auth?auth_code=...` 链接  
+1. **任务日志 / 终端里直接画出 ASCII 二维码** → 手机 B 站对着屏幕扫  
+2. 同时打印**在线图片链接**；若配置了 Bark 也会推送该链接  
+3. **不要**用浏览器打开 `passport.../auth?auth_code=...` 登录链接本身  
 
-兼容：`uv run daily.py --qr`（同样扫码，更推荐 `get_cookie.py`）。
+兼容：`uv run daily.py --qr`（更推荐单独跑 `get_cookie.py`）。
 
 ---
 

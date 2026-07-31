@@ -495,15 +495,30 @@ QR_PNG_PATH = SCRIPT_DIR / "login_qr.png"
 QR_HTML_PATH = SCRIPT_DIR / "login_qr.html"
 
 
+def _log_print(msg: str = "") -> None:
+    """写入 stdout（青龙任务日志会抓 print；flush 避免缓冲吞日志）。"""
+    print(msg, flush=True)
+
+
 def show_login_qr(auth_url: str) -> None:
     """
-    在终端画二维码，并写本地 PNG/HTML 供电脑浏览器打开图片。
-    auth_url 本身不要在 PC 浏览器里打开（会提示去手机打开）。
+    在终端/任务日志里输出可扫二维码（ASCII + 在线图片链接）。
+    auth_url 不要在 PC 浏览器直接打开（会提示去手机）。
     """
-    logger.info("请用【手机 B 站 App】→ 右上角扫一扫 → 扫下面二维码（勿在电脑打开登录链接）")
-    logger.info("有效约 2 分钟；确认登录后终端会自动继续")
+    online_img = (
+        "https://api.qrserver.com/v1/create-qr-code/?size=320x320&data="
+        + quote(auth_url, safe="")
+    )
 
-    # 1) 终端 ASCII 二维码（优先）
+    _log_print("")
+    _log_print("=" * 48)
+    _log_print("📱 请用【手机哔哩哔哩 App】→ 扫一扫 → 扫下方二维码")
+    _log_print("⚠️  不要用电脑浏览器打开登录链接本身")
+    _log_print("⏱️  约 2～3 分钟内有效，确认后脚本会自动继续")
+    _log_print("=" * 48)
+    _log_print("")
+
+    # 1) 终端 / 青龙日志 ASCII 二维码（手机对着屏幕扫）
     printed = False
     try:
         import qrcode  # type: ignore
@@ -511,14 +526,22 @@ def show_login_qr(auth_url: str) -> None:
         qr = qrcode.QRCode(border=1, box_size=1)
         qr.add_data(auth_url)
         qr.make(fit=True)
-        print("")
+        # invert=True 适合浅色底日志；深色终端也一般可扫
+        print("", flush=True)
         qr.print_ascii(invert=True)
-        print("")
+        print("", flush=True)
         printed = True
+        _log_print("✅ 上方为登录二维码（手机对着日志/终端屏幕扫）")
     except Exception as e:
-        logger.debug("终端二维码不可用: %s", e)
+        _log_print(f"⚠️  终端二维码绘制失败（可 pip install qrcode Pillow）: {e}")
 
-    # 2) 本地 PNG
+    # 2) 在线图片链接（Bark / 浏览器打开后扫）— 始终打印
+    _log_print("")
+    _log_print("🔗 二维码图片链接（可点开再扫，或已推送到 Bark）：")
+    _log_print(online_img)
+    _log_print("")
+
+    # 3) 本地 PNG / HTML（可选）
     png_ok = False
     try:
         import qrcode  # type: ignore
@@ -526,45 +549,32 @@ def show_login_qr(auth_url: str) -> None:
         img = qrcode.make(auth_url)
         img.save(QR_PNG_PATH)
         png_ok = True
-        logger.info("二维码图片已保存: %s", QR_PNG_PATH)
-        logger.info("电脑可直接打开该 PNG，用手机扫屏幕上的码")
+        _log_print(f"💾 本地图片: {QR_PNG_PATH}")
     except Exception as e:
         logger.debug("生成 PNG 失败: %s", e)
 
-    # 3) 本地 HTML（内嵌 data URI，无外网依赖）
     try:
         if png_ok and QR_PNG_PATH.is_file():
             b64 = base64.b64encode(QR_PNG_PATH.read_bytes()).decode("ascii")
-        else:
-            # 无 pillow 时 qrcode 可能只支持 ASCII；用在线兜底图
-            b64 = ""
-        if b64:
             html = f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <title>B站扫码登录</title>
 <style>
 body{{font-family:sans-serif;text-align:center;padding:2rem;background:#0f0f0f;color:#eee}}
 img{{width:min(360px,90vw);height:auto;background:#fff;padding:12px;border-radius:8px}}
-p{{line-height:1.6;max-width:28rem;margin:1rem auto}}
-code{{word-break:break-all;font-size:12px;opacity:.7}}
 </style></head><body>
 <h1>B 站扫码登录</h1>
-<p>请用 <b>手机 B 站 App</b> 扫描下方二维码，并在手机上点确认。<br>
-不要用电脑浏览器打开登录链接本身。</p>
+<p>请用手机 B 站扫下方码</p>
 <img src="data:image/png;base64,{b64}" alt="login qr"/>
-<p><code>{auth_url}</code></p>
 </body></html>"""
             QR_HTML_PATH.write_text(html, encoding="utf-8")
-            logger.info("也可在浏览器打开本地页: file://%s", QR_HTML_PATH)
+            _log_print(f"💾 本地网页: file://{QR_HTML_PATH}")
     except Exception as e:
         logger.debug("写 HTML 失败: %s", e)
 
-    if not printed and not png_ok:
-        # 最后兜底：第三方出图（仅显示码，不是登录页）
-        img_url = "https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=" + quote(
-            auth_url, safe=""
-        )
-        logger.info("在线二维码图片（可电脑打开后手机扫）:\n%s", img_url)
+    if not printed:
+        _log_print("👉 终端未能画码时，请打开上方「二维码图片链接」再扫")
+    _log_print("")
 
 
 # ---------------------------------------------------------------------------
