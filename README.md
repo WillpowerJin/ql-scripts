@@ -56,15 +56,27 @@
 定时规则： 30 8 * * *
 ```
 
+**只复制黑名单时用这一行（不要漏 `crypto_api`）：**
+
+```text
+pull_access_token|crypto_api
+```
+
+**只复制白名单时用这一行：**
+
+```text
+hifiti|wangchao|xijiu|quark|bilibili|fanghua
+```
+
 | 字段 | 说明 |
 |------|------|
 | 链接 | 只要 git 地址；不要填 README 网页，也不要整段 `ql repo ...` |
 | 白名单 | 用**目录名**，一次拉齐该目录下入口脚本 |
-| 黑名单 | `pull_access_token`（本地抠 token）、`crypto_api`（芳华库文件，不是任务） |
+| 黑名单 | `pull_access_token` = 习酒本地抠 token；`crypto_api` = 芳华库文件（**不要**建成定时任务） |
 | 扩展名 | 填 `py`，避免把 md/yaml 拉进脚本列表 |
 | 定时 | 只控制「自动拉库」，**不是**各业务任务的 cron |
 
-改完后：**保存 → 再点运行**。只点运行不会应用未保存的白名单。
+改完后：**保存 → 再点运行**订阅。已存在的 `crypto_api` 定时任务请手动删除/禁用。
 
 若直连 GitHub 失败，链接可改用镜像（按你环境可用的为准），例如：
 
@@ -77,7 +89,7 @@ https://ghfast.top/https://github.com/WillpowerJin/ql-scripts.git
 在青龙容器内：
 
 ```bash
-ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|quark|bilibili|fanghua" "pull_access_token" "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|quark|bilibili|fanghua" "pull_access_token|crypto_api" "" "main" "py"
 ```
 
 拉取成功后，脚本管理中应类似：
@@ -90,10 +102,10 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 …/bilibili/daily.py
 …/bilibili/get_cookie.py
 …/fanghua/main.py
-…/fanghua/crypto_api.py
 ```
 
-不应出现：`pull_access_token.py`。
+脚本文件里会有 `fanghua/crypto_api.py`（给 main 用），但**不要**把它建成定时任务。  
+不应出现：`pull_access_token.py` 作为任务。
 
 ### 公共通知（Bark）
 

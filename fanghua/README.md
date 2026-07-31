@@ -34,12 +34,12 @@ API：`https://api.cdwjyyh.com`
 …/fanghua/crypto_api.py    ← 库文件，被 main import，不要单独当任务跑
 ```
 
-订阅**黑名单**请加上 `crypto_api`（否则青龙会把库文件也加成定时任务）：
+订阅**黑名单**必须包含 `crypto_api`（否则青龙会把库文件也加成定时任务）。  
+整仓推荐黑名单（直接粘贴）：
 
 ```text
 pull_access_token|crypto_api
 ```
-
 ### 依赖
 
 青龙「依赖管理」→ 类型选 **python3** → 名称填：
