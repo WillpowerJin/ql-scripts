@@ -36,37 +36,49 @@
 
 ## 青龙订阅
 
-### 面板填写
+### 面板怎么填（复制下面代码块，不要带 `\`）
 
-青龙 → **订阅管理** → **创建订阅**：
+青龙 → **订阅管理** → **创建订阅**。
 
-| 字段 | 填写 |
+青龙的白/黑名单规则是：**路径字符串是否包含关键字**（多个用英文竖线分隔），**不是正则**。  
+因此不要写 `\.md`，也不要把 Markdown 表格里的 `\|` 原样粘进去。
+
+```text
+名称：     ql-scripts
+类型：     公开仓库
+链接：     https://github.com/WillpowerJin/ql-scripts.git
+分支：     main
+白名单：   hifiti|wangchao|xijiu|quark|bilibili
+黑名单：   pull_access_token
+扩展名：   py
+定时规则： 30 8 * * *
+```
+
+| 字段 | 说明 |
 |------|------|
-| 名称 | `ql-scripts`（随意） |
-| 类型 | 公开仓库 |
-| 链接 | `https://github.com/WillpowerJin/ql-scripts.git` |
-| 分支 | `main` |
-| **白名单** | `checkin\|read_gift\|xijiu\|quark\|bilibili` |
-| **黑名单** | `README\|config\|example\|requirements\|pull_access_token\|cookie_cache\|login_qr\|quantumultx\|\.md\|\.yaml\|\.yml\|\.txt\|\.js\|\.conf` |
-| 扩展名 | `py` |
-| 定时规则 | 仅控制「自动拉库」，例如 `30 8 * * *`（不是各个业务任务的 cron） |
+| 链接 | 只要 git 地址；不要填 README 网页，也不要整段 `ql repo ...` |
+| 白名单 | 用**目录名**，一次拉齐该目录下入口脚本 |
+| 黑名单 | 去掉 `xijiu/pull_access_token.py`（仅本地 root 抠 token 用） |
+| 扩展名 | 填 `py`，避免把 md/yaml 拉进脚本列表 |
+| 定时 | 只控制「自动拉库」，**不是**各业务任务的 cron |
 
-说明：
+改完后：**保存 → 再点运行**。只点运行不会应用未保存的白名单。
 
-- **白名单**：路径包含关键字即拉取，多个用 `\|` 分隔。  
-- **黑名单**：跳过文档、示例配置、本地专用脚本与 Cookie 缓存文件名。  
-- 改完白名单/黑名单后需 **保存再运行** 订阅；只点运行不会自动读本 README。
+若直连 GitHub 失败，链接可改用镜像（按你环境可用的为准），例如：
+
+```text
+https://ghfast.top/https://github.com/WillpowerJin/ql-scripts.git
+```
 
 ### 命令行等价
 
+在青龙容器内：
+
 ```bash
-ql repo https://github.com/WillpowerJin/ql-scripts.git \
-  "checkin|read_gift|xijiu|quark|bilibili" \
-  "README|config|example|requirements|pull_access_token|cookie_cache|login_qr|quantumultx|\.md|\.yaml|\.yml|\.txt|\.js|\.conf" \
-  "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|quark|bilibili" "pull_access_token" "" "main" "py"
 ```
 
-拉取成功后，脚本管理中大致可见：
+拉取成功后，脚本管理中应类似：
 
 ```text
 …/hifiti/checkin.py
@@ -77,7 +89,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git \
 …/bilibili/get_cookie.py
 ```
 
-不应出现：`pull_access_token.py`、各类 `README.md`、`config.example.yaml`。
+不应出现：`pull_access_token.py`。
 
 ### 公共通知（Bark）
 
