@@ -32,11 +32,17 @@ requests
 YYB_GO=https://你的code服务地址@openid的ref
 ```
 
-多账号换行：
+多账号换行；**每号备注**写在末尾 `#` 后（日志 / Bark 显示名）：
 
 ```text
-YYB_GO=https://host1@openid1
-https://host1@openid2
+YYB_GO=https://host@openid1#iPhone
+https://host@openid2#Android
+```
+
+**全局备注**（进 Bark 标题，区分多台青龙）：
+
+```text
+BAFU_NOTE=家里青龙
 ```
 
 **通知（与其它脚本共用）：**
