@@ -54,6 +54,15 @@
 | B站获取Cookie | `task .../bilibili/get_cookie.py` | **禁用定时**，需要时手动运行 |
 | B站每日任务 | `task .../bilibili/daily.py` | `30 7 * * *` |
 
+**脚本调试没有日志时：**
+
+1. 确认同目录有 `daily.py`（订阅白名单含 `bilibili`）  
+2. 依赖管理安装：`requests` `cryptography` `qrcode` `Pillow` `PyYAML`  
+3. 命令建议加无缓冲：`python3 -u get_cookie.py`（或任务前缀 `python3 -u`）  
+4. 成功启动时日志**第一行**应是：`[get_cookie] start`  
+   - 若连这行都没有：看的是旧文件 / 跑错任务 / 未保存订阅  
+   - 若有 start 随后报 import：按提示装依赖
+
 可选环境变量：
 
 ```text
