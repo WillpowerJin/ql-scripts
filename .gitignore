@@ -16,6 +16,10 @@ yongpai/
 
 # 本地 session 缓存（含敏感登录态）
 **/.sessions/
+**/cookie_cache.json
+**/token_cache.json
+**/login_qr.png
+**/login_qr.html
 
 # 日志与系统
 **/*.log

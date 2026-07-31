@@ -1,0 +1,43 @@
+# cp config.example.yaml config.yaml 后填写（config.yaml 勿提交）
+
+accounts:
+  # 方式 A（推荐，无需抓包）：填用户名/密码，首次运行用 --qr 扫码拿 Cookie；
+  # 之后 Cookie 失效再用 --qr 刷新。纯账密会撞极验，多数环境过不去。
+  - name: "主号"
+    username: ""          # 手机号 / 邮箱 / UID
+    password: ""
+    # 方式 B：浏览器已登录 bilibili.com，F12 → Application → Cookies 复制
+    # 至少需要 SESSDATA 与 bili_jct（可选 DedeUserID）
+    cookie: ""
+    # 方式 C：扫码登录后脚本写入的 access_token（一般不用手填）
+    access_token: ""
+
+  # 多账号示例
+  # - name: "号2"
+  #   cookie: "SESSDATA=...; bili_jct=...; DedeUserID=..."
+
+# 每日投币次数 0~5（0=不投币）
+coin_num: 5
+# 银瓜子兑硬币
+silver2coin: true
+# 直播中心签到（官方多已下线，默认关）
+live_sign: false
+# 漫画签到
+manga_sign: true
+# 大会员：额外经验 / 大积分浏览 / 每月福利
+vip_tasks: true
+
+# 可选：极验通过后的参数（接打码平台时填，一般不需要）
+# geetest:
+#   token: ""
+#   challenge: ""
+#   validate: ""
+#   seccode: ""
+
+timeout: 25
+# user_agent: "..."
+
+notify:
+  bark_url: ""
+  bark_key: ""
+  bark_group: "B站每日任务"
