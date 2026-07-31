@@ -44,20 +44,28 @@ except Exception:
 
 
 def emit(msg: str = "") -> None:
-    """stdout + stderr 双写，青龙调试两种采集方式都能看到。"""
-    line = msg if msg.endswith("\n") or msg == "" else msg + "\n"
-    if msg == "":
-        line = "\n"
+    """
+    写 stdout（flush）。
+    在青龙环境再抄一份到 stderr：部分「脚本调试」只采 stderr 或只采其一。
+    本地交互终端只写 stdout，避免重复两行。
+    """
+    line = "\n" if msg == "" else (msg if msg.endswith("\n") else msg + "\n")
     try:
         sys.stdout.write(line)
         sys.stdout.flush()
     except Exception:
         pass
-    try:
-        sys.stderr.write(line)
-        sys.stderr.flush()
-    except Exception:
-        pass
+    in_ql = bool(
+        os.environ.get("QL_DIR")
+        or os.environ.get("QL_DATA_DIR")
+        or Path("/ql/data").is_dir()
+    )
+    if in_ql:
+        try:
+            sys.stderr.write(line)
+            sys.stderr.flush()
+        except Exception:
+            pass
 
 
 emit("[get_cookie] start")
