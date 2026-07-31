@@ -89,9 +89,14 @@ FANGHUA_NAME=主号&号2
 可选：
 
 ```text
+# 单账号最长挂机小时（默认 2，可改成 1 / 0.5 / 3 等）
 FANGHUA_MAX_RUN_HOURS=2
+
 FANGHUA_TOKEN_CACHE=/ql/data/fanghua_token_cache.json
 ```
+
+也可用命令行覆盖：`python3 -u main.py --max-hours 1`  
+或本地 `config.yaml` 里：`max_run_hours: 2`
 
 ### 通知（与仓库其它脚本共用）
 

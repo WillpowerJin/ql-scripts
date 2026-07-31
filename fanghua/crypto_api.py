@@ -2,6 +2,10 @@
 # -*- coding: utf-8 -*-
 """芳华未来 API 加解密与请求封装。
 
+# 库文件不是挂机入口；占位 cron（2 月 31 日永不触发），避免青龙自动添加时报 Validation failed
+cron: 1 1 31 2 *
+new Env('芳华crypto库(请禁用)');
+
 请求：
   - Body: AES/CBC/PKCS5，key=16 位随机字母数字，IV=key 本身
   - X-Api-Sign: RSA/ECB/PKCS1 加密 `timestamp={ts}&aesKey={key}`（服务端公钥）
