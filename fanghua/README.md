@@ -30,17 +30,21 @@ API：`https://api.cdwjyyh.com`
 会拉到：
 
 ```text
-…/fanghua/main.py          ← 只把这个建成「定时任务」
-…/fanghua/crypto_api.py    ← 库文件，被 main import，不要单独当任务跑
+…/fanghua/main.py          ← 定时任务只启用这个
+…/fanghua/crypto_api.py    ← 库文件，main 运行时会 import，必须存在
 ```
 
-订阅**黑名单**必须包含 `crypto_api`（否则青龙会把库文件也加成定时任务）。  
-整仓推荐黑名单（直接粘贴）：
+**不要把 `crypto_api` 写进订阅黑名单。**  
+青龙黑名单 = **不下载该文件**，不是「下载但不建任务」。  
+黑了以后 `main.py` 会报 `No module named 'crypto_api'`。
+
+若订阅后多出「crypto_api」定时任务：在定时任务里 **禁用** 即可，**不要删脚本文件**。
+
+整仓推荐黑名单（仅排除习酒本地脚本）：
 
 ```text
-pull_access_token|crypto_api
-```
-### 依赖
+pull_access_token
+```### 依赖
 
 青龙「依赖管理」→ 类型选 **python3** → 名称填：
 

@@ -295,3 +295,12 @@ class FanghuaClient:
 
     def heartbeat(self, action: str = "HEARTBEAT") -> dict[str, Any]:
         return self.post("/app/portrait/heartbeat", {"action": action})
+
+
+if __name__ == "__main__":
+    # 青龙可能把本文件也建成定时任务；直接退出，避免误跑报错
+    print(
+        "crypto_api.py 是芳华加解密库，不是任务入口。\n"
+        "请运行同目录 main.py；若定时任务里有 crypto_api，请禁用（不要删文件）。",
+        flush=True,
+    )
