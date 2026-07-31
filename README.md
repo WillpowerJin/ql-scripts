@@ -21,6 +21,7 @@
 | [quark](./quark/) | `quark_checkin.py` | 夸克网盘每日签到领空间（需抓包参数） | [说明](./quark/README.md) |
 | [bilibili](./bilibili/) | `get_cookie.py` + `daily.py` | B 站：扫码获取 Cookie + 每日经验任务（无需 App 抓包） | [说明](./bilibili/README.md) |
 | [fanghua](./fanghua/) | `main.py` | 芳华未来：手机号密码登录 + 签到/刷视频挂机 | [说明](./fanghua/README.md) |
+| [bafu](./bafu/) | `ads_yyb.py` | 八富生活：YYB 取 code 协议看广告 + Bark | [说明](./bafu/README.md) |
 
 ### 入口与定时建议
 
@@ -33,6 +34,7 @@
 | `bilibili/get_cookie.py` | **手动**（Cookie 失效时） | 手机 B 站扫码 |
 | `bilibili/daily.py` | 每天定时 | 依赖扫码缓存的 Cookie |
 | `fanghua/main.py` | 每天定时 | 单号默认最长约 2h，任务超时请调大 |
+| `bafu/ads_yyb.py` | 每天定时 | 需 `YYB_GO`；超时建议 ≥30min |
 
 ---
 
@@ -50,7 +52,7 @@
 类型：     公开仓库
 链接：     https://github.com/WillpowerJin/ql-scripts.git
 分支：     main
-白名单：   hifiti|wangchao|xijiu|quark|bilibili|fanghua
+白名单：   hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu
 黑名单：   pull_access_token
 扩展名：   py
 定时规则： 30 8 * * *
@@ -65,7 +67,7 @@ pull_access_token
 **只复制白名单：**
 
 ```text
-hifiti|wangchao|xijiu|quark|bilibili|fanghua
+hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu
 ```
 
 | 字段 | 说明 |
@@ -91,7 +93,7 @@ https://ghfast.top/https://github.com/WillpowerJin/ql-scripts.git
 在青龙容器内：
 
 ```bash
-ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|quark|bilibili|fanghua" "pull_access_token" "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu" "pull_access_token" "" "main" "py"
 ```
 
 拉取成功后，脚本管理中应类似：
@@ -105,6 +107,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 …/bilibili/get_cookie.py
 …/fanghua/main.py
 …/fanghua/crypto_api.py      ← 库文件，若自动生成任务请「禁用」勿删
+…/bafu/ads_yyb.py
 ```
 
 不应把 `pull_access_token.py` 建成任务（黑名单已排除）。
@@ -154,10 +157,14 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 │   ├── config.example.yaml
 │   ├── requirements.txt
 │   └── README.md
-└── fanghua/
-    ├── main.py               # 芳华未来挂机入口
-    ├── crypto_api.py         # 加解密 / API
-    ├── config.example.yaml
+├── fanghua/
+│   ├── main.py               # 芳华未来挂机入口
+│   ├── crypto_api.py         # 加解密 / API
+│   ├── config.example.yaml
+│   ├── requirements.txt
+│   └── README.md
+└── bafu/
+    ├── ads_yyb.py            # 八富 YYB 协议看广告 + Bark
     ├── requirements.txt
     └── README.md
 ```

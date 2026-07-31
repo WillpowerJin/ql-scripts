@@ -18,6 +18,8 @@ yongpai/
 **/.sessions/
 **/cookie_cache.json
 **/token_cache.json
+**/bafu_session_cache.json
+**/bfsh_session_cache.json
 **/login_qr.png
 **/login_qr.html
 
