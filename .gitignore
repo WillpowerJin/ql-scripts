@@ -21,6 +21,12 @@ yongpai/
 **/login_qr.png
 **/login_qr.html
 
+# 逆向产物 / 大体积本地文件（不进仓库）
+**/reverse/
+**/*.apk
+**/*.dex
+**/*.so
+
 # 日志与系统
 **/*.log
 .DS_Store
