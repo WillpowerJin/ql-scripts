@@ -26,6 +26,7 @@
 | [junpinhui](./junpinhui/) | `daily.py` | 习酒君品荟：每日积分签到（YYB 取 wx code） | [说明](./junpinhui/README.md) |
 | [tuiguangbao](./tuiguangbao/) | `daily.py` | 推广宝：登录看广告领奖（对齐 2.5 + Bark） | [说明](./tuiguangbao/README.md) |
 | [duoxiang](./duoxiang/) | `daily.py` | 多象：签到 + 领活跃收益 + 整元提现 | [说明](./duoxiang/README.md) |
+| [aliyun_dev](./aliyun_dev/) | `daily.py` | 阿里云开发者社区：签到/互动/领积分（支持账密或 Cookie） | [说明](./aliyun_dev/README.md) |
 
 ### 入口与定时建议
 
@@ -43,6 +44,7 @@
 | `junpinhui/daily.py` | 每天定时 | 需 YYB + `access_token`；见子目录 |
 | `tuiguangbao/daily.py` | 每天定时 `0 9 * * *` | 环境变量 `TGB` 或 `TGB_ACCOUNTS`；超时建议 ≥15～20min |
 | `duoxiang/daily.py` | 每天定时 `0 10 * * *` | 环境变量 `DX` 或 `DX_ACCOUNTS`；`DX_WITHDRAW=0` 可关提现 |
+| `aliyun_dev/daily.py` | 每天 **两次** `0 7,13 * * *`（都跑完整版） | Cookie：`aliyunWeb_data` / `ALIYUN_ACCOUNTS`；含领待收积分；超时 ≥15min |
 
 ---
 
@@ -60,7 +62,7 @@
 类型：     公开仓库
 链接：     https://github.com/WillpowerJin/ql-scripts.git
 分支：     main
-白名单：   hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao|duoxiang
+白名单：   hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao|duoxiang|aliyun_dev
 黑名单：   pull_access_token
 扩展名：   py
 定时规则： 30 8 * * *
@@ -75,7 +77,7 @@ pull_access_token
 **只复制白名单：**
 
 ```text
-hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao|duoxiang
+hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao|duoxiang|aliyun_dev
 ```
 
 | 字段 | 说明 |
@@ -101,7 +103,7 @@ https://ghfast.top/https://github.com/WillpowerJin/ql-scripts.git
 在青龙容器内：
 
 ```bash
-ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao|duoxiang" "pull_access_token" "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao|duoxiang|aliyun_dev" "pull_access_token" "" "main" "py"
 ```
 
 拉取成功后，脚本管理中应类似：
@@ -120,6 +122,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 …/fun/mine.py
 …/tuiguangbao/daily.py       ← 推广宝任务入口
 …/duoxiang/daily.py          ← 多象签到/领收益/提现
+…/aliyun_dev/daily.py        ← 阿里云开发者社区
 ```
 
 不应把 `pull_access_token.py` 建成任务（黑名单已排除）。
@@ -195,8 +198,13 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 │   ├── config.example.yaml
 │   ├── requirements.txt
 │   └── README.md
-└── duoxiang/
-    ├── daily.py              # 多象签到 / 领活跃收益 / 提现
+├── duoxiang/
+│   ├── daily.py              # 多象签到 / 领活跃收益 / 提现
+│   ├── config.example.yaml
+│   ├── requirements.txt
+│   └── README.md
+└── aliyun_dev/
+    ├── daily.py              # 阿里云开发者社区日常
     ├── config.example.yaml
     ├── requirements.txt
     └── README.md
