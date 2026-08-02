@@ -40,7 +40,7 @@
 | `bafu/ads_yyb.py` | 每天定时 | 需 `YYB_GO`；超时建议 ≥30min |
 | `fun/mine.py` | 每天定时 | 环境变量 `FUN`；收矿开、升级建议先关 |
 | `junpinhui/daily.py` | 每天定时 | 需 YYB + `access_token`；见子目录 |
-| `tuiguangbao/daily.py` | 每天定时 | `TGB` / `TGB_ACCOUNTS`；单条广告约 22s，超时建议 ≥15min |
+| `tuiguangbao/daily.py` | 每天定时 `0 9 * * *` | 环境变量 `TGB` 或 `TGB_ACCOUNTS`；超时建议 ≥15～20min；禁用 `main.py` 任务 |
 
 ---
 
@@ -88,6 +88,8 @@ hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao
 
 芳华会拉到两个 `.py`：`main.py`（任务入口）+ `crypto_api.py`（库）。若青龙自动给 `crypto_api` 建了定时任务，**禁用即可，不要从脚本目录删文件**。
 
+推广宝会拉到：`daily.py`（任务入口）+ `main.py`（兼容转发）。若给 `main.py` 自动建了任务，**禁用 main，只保留 daily.py**。
+
 若直连 GitHub 失败，链接可改用镜像（按你环境可用的为准），例如：
 
 ```text
@@ -116,7 +118,8 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 …/fanghua/crypto_api.py      ← 库文件，若自动生成任务请「禁用」勿删
 …/bafu/ads_yyb.py
 …/fun/mine.py
-…/tuiguangbao/daily.py
+…/tuiguangbao/daily.py       ← 推广宝任务入口
+…/tuiguangbao/main.py        ← 兼容入口；若自动建任务请禁用
 ```
 
 不应把 `pull_access_token.py` 建成任务（黑名单已排除）。

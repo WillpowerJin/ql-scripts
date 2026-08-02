@@ -12,7 +12,7 @@ Discuz 插件「推广宝」每日任务：登录 → 绑邀请码 → 模拟看
 
 1. **密码登录** Discuz（Cookie 含 `*_auth` 即成功）
 2. 可选：配置 / 缓存 Cookie 复用会话，失效自动重登
-3. 查进度 `status` → 冷却 → `next_ad` → 模拟观看 → `complete_ad` → 满 5 条 `claim`
+3. 查进度 `status` → 冷却 → `next_ad` → 模拟观看 → `complete_ad` → 满额 `claim`
 4. 配置优先读 **青龙 / 系统环境变量**（本地也可 `config.yaml`）
 5. 结果可推送 **Bark** / Server酱 / Webhook
 
@@ -20,27 +20,73 @@ Discuz 插件「推广宝」每日任务：登录 → 绑邀请码 → 模拟看
 
 | 文件 | 是否进青龙 | 说明 |
 |------|------------|------|
-| `daily.py` | ✅ 拉取 | 主脚本（推荐） |
-| `main.py` | 可选 | 兼容入口，转发 `daily.py` |
-| `README.md` | ❌ 不拉 | 本文档 |
+| `daily.py` | ✅ 拉取 | **主脚本（请用这个建任务）** |
+| `main.py` | 会拉到 | 兼容入口，转发 `daily.py`；若自动建了任务请**禁用** |
+| `README.md` | ❌ 不拉 | 本文档（扩展名只选 `py` 时本来就不会拉） |
 | `config.example.yaml` | ❌ 不拉 | 本地配置示例 |
 | `requirements.txt` | ❌ 不拉 | 本地依赖 |
+| `origin_2.5.js` | ❌ 不拉 | 原 JS 对照，非运行依赖 |
 
-青龙依赖管理添加：`requests`。
+青龙依赖管理 → Python3 → 添加：`requests`。
 
-## 青龙订阅
+## 青龙订阅（推荐跟仓库一起拉）
 
-仓库根 [README](../README.md) 有通用订阅。若只拉本脚本：
+根目录 [README](../README.md) 已更新白名单，包含 `tuiguangbao`。把订阅**白名单**改成：
 
-```bash
-ql repo https://github.com/WillpowerJin/ql-scripts.git "daily" "README|config|example|requirements|\.md|\.yaml|\.yml|\.txt|\.js" "" "main" "py"
+```text
+hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao
 ```
 
-定时（脚本头已写）：
+**黑名单**保持：
+
+```text
+pull_access_token
+```
+
+**扩展名**：`py`  
+
+改完后：**保存 → 再点运行**订阅。
+
+拉取后脚本管理中应出现：
+
+```text
+…/tuiguangbao/daily.py     ← 定时任务用这个
+…/tuiguangbao/main.py       ← 若自动生成任务，禁用即可
+```
+
+### 只拉推广宝（可选）
+
+白名单填目录名 `tuiguangbao` 即可（不要填 `daily`，会误匹配其它项目的 `daily.py`）：
+
+```bash
+ql repo https://github.com/WillpowerJin/ql-scripts.git "tuiguangbao" "pull_access_token" "" "main" "py"
+```
+
+面板等价：
+
+```text
+链接：     https://github.com/WillpowerJin/ql-scripts.git
+分支：     main
+白名单：   tuiguangbao
+黑名单：   pull_access_token
+扩展名：   py
+```
+
+## 定时任务
+
+脚本头：
 
 ```
 0 9 * * *
 ```
+
+| 项 | 建议 |
+|----|------|
+| 命令 | `task …/tuiguangbao/daily.py`（以青龙实际路径为准） |
+| 定时 | `0 9 * * *` 或自定 |
+| 超时 | **≥ 15～20 分钟**（默认每条广告模拟 22s × 约 5 条 + 冷却/多账号） |
+
+多账号时：单号约 2～3 分钟量级，N 号再乘 N，并预留 `TGB_INTER_ACCOUNT_DELAY`。
 
 ## 环境变量（账号）
 
@@ -56,7 +102,9 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "daily" "README|config|ex
 ]
 ```
 
-可选字段：`cookie`（已有 Discuz 会话时免登）。
+可选字段：`cookie`（已有 Discuz 会话时免登，需含 `*_auth`）。
+
+青龙里注意 JSON 合法；密码中若有 `"` 需转义。
 
 ### 方式 B：兼容原 JS `TGB`
 
@@ -64,18 +112,20 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "daily" "README|config|ex
 TGB=手机号#密码&手机号2#密码2
 ```
 
-也支持换行分隔。
+也支持换行分隔多个账号。
 
 ### 方式 C：平行变量（`&` 分隔）
 
 | 变量 | 说明 |
 |------|------|
 | `TGB_USER` / `TGB_PHONE` | 手机号 |
-| `TGB_PASS` / `TGB_PASSWORD` | 密码 |
+| `TGB_PASS` / `TGB_PASSWORD` | 密码（与上面对齐） |
 | `TGB_NAME` | 可选备注 |
-| `TGB_COOKIE` | 可选会话 |
+| `TGB_COOKIE` | 可选会话 Cookie |
 
 ## 环境变量（Bark，可选）
+
+与仓库其它脚本共用：
 
 | 变量 | 说明 |
 |------|------|
@@ -95,11 +145,11 @@ TGB=手机号#密码&手机号2#密码2
 | `TGB_RETRY_INTERVAL` | 重试间隔秒 | `10` |
 | `TGB_AD_WATCH_SECONDS` | 单条广告模拟观看秒 | `22` |
 | `TGB_INTER_ACCOUNT_DELAY` | 账号间隔秒 | `6` |
-| `TGB_INTER_AD_DELAY_MIN` / `MAX` | 广告间隔随机秒 | `3` / `6` |
+| `TGB_INTER_AD_DELAY_MIN` / `TGB_INTER_AD_DELAY_MAX` | 广告间隔随机秒 | `3` / `6` |
 | `TGB_MAX_AD_LOOPS` | 单号最大循环 | `50` |
 | `TGB_UA` | User-Agent | 内置安卓 UA |
-| `TGB_SESSION_CACHE` | 会话缓存路径 | 脚本目录 / 青龙 `/ql/data` |
-| `DRY_RUN=1` | 只登录+查进度 | 关 |
+| `TGB_SESSION_CACHE` | 会话缓存路径 | 青龙优先 `/ql/data/tuiguangbao_session_cache.json` |
+| `DRY_RUN=1` | 只登录 + 查进度，不看广告 | 关 |
 | `SERVERCHAN_KEY` | Server酱 | |
 | `WEBHOOK_URL` | 自定义 Webhook | |
 
@@ -108,6 +158,7 @@ TGB=手机号#密码&手机号2#密码2
 ```bash
 cd tuiguangbao
 pip install -r requirements.txt
+# 或仓库根：uv pip install -r requirements.txt
 cp config.example.yaml config.yaml   # 填写后不要 git add
 python daily.py
 python daily.py --login-only         # 只测登录
@@ -122,12 +173,12 @@ python daily.py --dry-run -v         # 查进度
 | 登录 | POST | `/member.php?...&loginsubmit=yes&mobile=2` | username+password，需 `*_auth` Cookie |
 | formhash | GET | `/plugin.php?id=view&modac=sign` | 后续 POST 用 |
 | 绑邀请码 | POST | `/plugin.php?id=xigua_hh:bindcode` | `yqcode` |
-| 进度 | GET | `...&modac=sign&submodac=status` | viewed/target/can_claim |
+| 进度 | GET | `...&modac=sign&submodac=status` | viewed / target / can_claim |
 | 下一条广告 | POST | `...&submodac=next_ad` | 返回 token |
 | 上报完成 | POST | `...&submodac=complete_ad` | token |
 | 领奖 | POST | `...&submodac=claim` | 满 target 后 |
 
-单广告模拟观看默认 **22 秒**；满 **5** 条（以接口 `target_count` 为准）自动领奖。
+单广告模拟观看默认 **22 秒**；目标条数以接口 `target_count` 为准（常见为 5）。
 
 ## 日志含义
 
@@ -143,5 +194,5 @@ python daily.py --dry-run -v         # 查进度
 
 ## 依赖
 
-- 青龙：`requests`
+- 青龙：只需 `requests`
 - 本地 yaml：`requests` + `PyYAML`
