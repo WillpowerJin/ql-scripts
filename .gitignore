@@ -1,5 +1,9 @@
-# 私有 / 本地工程（不进本仓库）
+# 私有 / 本地工程（不进本仓库；搁置或未发布）
 yongpai/
+ksjsb/
+ninebot/
+vps8/
+yyb-go/
 
 # 密钥与本地配置
 **/config.yaml
@@ -25,9 +29,14 @@ yongpai/
 
 # 逆向产物 / 大体积本地文件（不进仓库）
 **/reverse/
+**/capture/
 **/*.apk
 **/*.dex
 **/*.so
+**/*.bak
+**/frida-server*
+**/hluda-server*
+**/*.xz
 
 # 日志与系统
 **/*.log

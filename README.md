@@ -134,6 +134,8 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 ```text
 .
 ├── README.md                 # 本页
+├── requirements.txt          # 本地开发：根虚拟环境依赖汇总
+├── .venv/                    # 本地开发用（不进 git）
 ├── hifiti/
 │   ├── checkin.py
 │   ├── config.example.yaml
@@ -183,25 +185,33 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 
 ## 本地开发
 
+本仓库是多脚本 monorepo，**推荐在仓库根目录共用一个虚拟环境**（各子目录 `requirements.txt` 仍保留作清单）。
+
 ```bash
 git clone https://github.com/WillpowerJin/ql-scripts.git
 cd ql-scripts
 
+# 创建根 venv 并安装全部本地依赖（推荐用 uv；也可用 python3 -m venv）
+uv venv .venv
+uv pip install --python .venv/bin/python -r requirements.txt
+# 或：python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+
+source .venv/bin/activate
+
 # 示例：B 站
 cd bilibili
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
 python get_cookie.py          # 扫码
 python daily.py               # 任务
 
 # 示例：望潮
 cd ../wangchao
-pip install -r requirements.txt
 cp config.example.yaml config.yaml   # 填写后勿提交
 python read_gift.py --dry-run
 ```
 
-`config.yaml`、Cookie 缓存等已在 `.gitignore` 中忽略。
+青龙面板侧仍按各脚本文档用系统/容器环境安装依赖，不必使用本机的根 `.venv`。
+
+`config.yaml`、Cookie 缓存、`.venv/` 等已在 `.gitignore` 中忽略。
 
 ---
 

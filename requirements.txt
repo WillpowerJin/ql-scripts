@@ -1,0 +1,23 @@
+# 仓库根虚拟环境依赖（本地开发用，对应已发布子项目）
+# 各子项目 requirements.txt 仍保留，作为「该脚本最少需要什么」的清单。
+#
+# 安装（推荐 uv）：
+#   uv venv .venv && uv pip install --python .venv/bin/python -r requirements.txt
+# 或：
+#   python3 -m venv .venv && source .venv/bin/activate && pip install -U pip && pip install -r requirements.txt
+
+# 通用
+requests>=2.31.0
+PyYAML>=6.0.1
+
+# bilibili
+cryptography>=41.0.0
+qrcode>=7.4
+Pillow>=10.0
+
+# fanghua
+pycryptodome>=3.19.0
+
+# wangchao
+gmssl>=3.2.2
+pycryptodomex>=3.15.0
