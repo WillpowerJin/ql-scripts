@@ -25,6 +25,7 @@
 | [fun](./fun/) | `mine.py` | FUN 矿池：登录收矿/可选升级 + Bark | [说明](./fun/README.md) |
 | [junpinhui](./junpinhui/) | `daily.py` | 习酒君品荟：每日积分签到（YYB 取 wx code） | [说明](./junpinhui/README.md) |
 | [tuiguangbao](./tuiguangbao/) | `daily.py` | 推广宝：登录看广告领奖（对齐 2.5 + Bark） | [说明](./tuiguangbao/README.md) |
+| [duoxiang](./duoxiang/) | `daily.py` | 多象：签到 + 领活跃收益 + 整元提现 | [说明](./duoxiang/README.md) |
 
 ### 入口与定时建议
 
@@ -40,7 +41,8 @@
 | `bafu/ads_yyb.py` | 每天定时 | 需 `YYB_GO`；超时建议 ≥30min |
 | `fun/mine.py` | 每天定时 | 环境变量 `FUN`；收矿开、升级建议先关 |
 | `junpinhui/daily.py` | 每天定时 | 需 YYB + `access_token`；见子目录 |
-| `tuiguangbao/daily.py` | 每天定时 `0 9 * * *` | 环境变量 `TGB` 或 `TGB_ACCOUNTS`；超时建议 ≥15～20min；禁用 `main.py` 任务 |
+| `tuiguangbao/daily.py` | 每天定时 `0 9 * * *` | 环境变量 `TGB` 或 `TGB_ACCOUNTS`；超时建议 ≥15～20min |
+| `duoxiang/daily.py` | 每天定时 `0 10 * * *` | 环境变量 `DX` 或 `DX_ACCOUNTS`；`DX_WITHDRAW=0` 可关提现 |
 
 ---
 
@@ -58,7 +60,7 @@
 类型：     公开仓库
 链接：     https://github.com/WillpowerJin/ql-scripts.git
 分支：     main
-白名单：   hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao
+白名单：   hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao|duoxiang
 黑名单：   pull_access_token
 扩展名：   py
 定时规则： 30 8 * * *
@@ -73,7 +75,7 @@ pull_access_token
 **只复制白名单：**
 
 ```text
-hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao
+hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao|duoxiang
 ```
 
 | 字段 | 说明 |
@@ -88,8 +90,6 @@ hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao
 
 芳华会拉到两个 `.py`：`main.py`（任务入口）+ `crypto_api.py`（库）。若青龙自动给 `crypto_api` 建了定时任务，**禁用即可，不要从脚本目录删文件**。
 
-推广宝会拉到：`daily.py`（任务入口）+ `main.py`（兼容转发）。若给 `main.py` 自动建了任务，**禁用 main，只保留 daily.py**。
-
 若直连 GitHub 失败，链接可改用镜像（按你环境可用的为准），例如：
 
 ```text
@@ -101,7 +101,7 @@ https://ghfast.top/https://github.com/WillpowerJin/ql-scripts.git
 在青龙容器内：
 
 ```bash
-ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao" "pull_access_token" "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao|duoxiang" "pull_access_token" "" "main" "py"
 ```
 
 拉取成功后，脚本管理中应类似：
@@ -119,7 +119,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 …/bafu/ads_yyb.py
 …/fun/mine.py
 …/tuiguangbao/daily.py       ← 推广宝任务入口
-…/tuiguangbao/main.py        ← 兼容入口；若自动建任务请禁用
+…/duoxiang/daily.py          ← 多象签到/领收益/提现
 ```
 
 不应把 `pull_access_token.py` 建成任务（黑名单已排除）。
@@ -190,9 +190,13 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 │   ├── config.example.yaml
 │   ├── requirements.txt
 │   └── README.md
-└── tuiguangbao/
-    ├── daily.py              # 推广宝每日看广告领奖
-    ├── main.py               # 兼容入口
+├── tuiguangbao/
+│   ├── daily.py              # 推广宝每日看广告领奖
+│   ├── config.example.yaml
+│   ├── requirements.txt
+│   └── README.md
+└── duoxiang/
+    ├── daily.py              # 多象签到 / 领活跃收益 / 提现
     ├── config.example.yaml
     ├── requirements.txt
     └── README.md

@@ -21,11 +21,9 @@ Discuz 插件「推广宝」每日任务：登录 → 绑邀请码 → 模拟看
 | 文件 | 是否进青龙 | 说明 |
 |------|------------|------|
 | `daily.py` | ✅ 拉取 | **主脚本（请用这个建任务）** |
-| `main.py` | 会拉到 | 兼容入口，转发 `daily.py`；若自动建了任务请**禁用** |
 | `README.md` | ❌ 不拉 | 本文档（扩展名只选 `py` 时本来就不会拉） |
 | `config.example.yaml` | ❌ 不拉 | 本地配置示例 |
 | `requirements.txt` | ❌ 不拉 | 本地依赖 |
-| `origin_2.5.js` | ❌ 不拉 | 原 JS 对照，非运行依赖 |
 
 青龙依赖管理 → Python3 → 添加：`requests`。
 
@@ -51,7 +49,6 @@ pull_access_token
 
 ```text
 …/tuiguangbao/daily.py     ← 定时任务用这个
-…/tuiguangbao/main.py       ← 若自动生成任务，禁用即可
 ```
 
 ### 只拉推广宝（可选）
