@@ -7,6 +7,7 @@ yyb-go/
 
 # 密钥与本地配置
 **/config.yaml
+**/config.json
 **/.env
 **/.env.*
 
@@ -22,8 +23,10 @@ yyb-go/
 **/.sessions/
 **/cookie_cache.json
 **/token_cache.json
+**/session_cache.json
 **/bafu_session_cache.json
 **/bfsh_session_cache.json
+**/tuiguangbao_session_cache.json
 **/login_qr.png
 **/login_qr.html
 

@@ -1,7 +1,17 @@
+# 本地调试用配置（青龙请用环境变量，见 README）
+# cp config.example.yaml config.yaml
+# 勿把 config.yaml 提交到 Git
+
 accounts:
-  - name: 账号1
+  - name: "主号"
     phone: "13800138000"
-    password: your_password
+    password: "your_password"
+    # 可选：已有 Discuz 会话时直接填 cookie（含 *_auth）
+    # cookie: "xxx_auth=...; xxx_sid=..."
+
+  # - name: "备号"
+  #   phone: "139..."
+  #   password: "..."
 
 invite_code: "000GHFAV"
 timeout: 15
@@ -9,13 +19,21 @@ max_retries: 3
 retry_interval: 10
 ad_watch_seconds: 22
 inter_account_delay: 6
-user_agent: "Mozilla/5.0 (Linux; Android 16; V2426A Build/BP2A.250605.031.A3_V000L1; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/134.0.6998.135 Mobile Safari/537.36 TuiGuangBaoAndroid/1.0.2"
+inter_ad_delay_min: 3
+inter_ad_delay_max: 6
+max_ad_loops: 50
+# dry_run: false
 
 notify:
+  # Bark：二选一
   bark_url: ""
   bark_key: ""
   bark_server: "https://api.day.app"
   bark_group: "推广宝"
-  bark_sound: ""
-  bark_icon: ""
-  bark_level: ""
+  # bark_sound: "bell"
+  # bark_icon: "https://example.com/icon.png"
+  # bark_level: "active"
+
+  # 可选其它渠道
+  serverchan_key: ""
+  webhook_url: ""
