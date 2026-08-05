@@ -21,7 +21,7 @@
 | [quark](./quark/) | `quark_checkin.py` | 夸克网盘每日签到领空间（需抓包参数） | [说明](./quark/README.md) |
 | [bilibili](./bilibili/) | `get_cookie.py` + `daily.py` | B 站：扫码获取 Cookie + 每日经验任务（无需 App 抓包） | [说明](./bilibili/README.md) |
 | [fanghua](./fanghua/) | `main.py` | 芳华未来：手机号密码登录 + 签到/刷视频挂机 | [说明](./fanghua/README.md) |
-| [bafu](./bafu/) | `ads_yyb.py` | 八富生活：YYB 取 code 协议看广告 + Bark | [说明](./bafu/README.md) |
+| [bafu](./bafu/) | `ads_app.py` | 八富生活：App 协议看广告（手机号密码）+ Bark | [说明](./bafu/README.md) |
 | [fun](./fun/) | `mine.py` | FUN 矿池：登录收矿/可选升级 + Bark | [说明](./fun/README.md) |
 | [junpinhui](./junpinhui/) | `daily.py` | 习酒君品荟：每日积分签到（YYB 取 wx code） | [说明](./junpinhui/README.md) |
 | [tuiguangbao](./tuiguangbao/) | `daily.py` | 推广宝：登录看广告领奖（对齐 2.5 + Bark） | [说明](./tuiguangbao/README.md) |
@@ -39,7 +39,7 @@
 | `bilibili/get_cookie.py` | **手动**（Cookie 失效时） | 手机 B 站扫码 |
 | `bilibili/daily.py` | 每天定时 | 依赖扫码缓存的 Cookie |
 | `fanghua/main.py` | 每天定时 | 单号默认最长约 2h，任务超时请调大 |
-| `bafu/ads_yyb.py` | 每天定时 | 需 `YYB_GO`；超时建议 ≥30min |
+| `bafu/ads_app.py` | 每天定时 / 隔几小时 | 需 `BAFU`（手机号#密码）；超时建议 ≥30min |
 | `fun/mine.py` | 每天定时 | 环境变量 `FUN`；收矿开、升级建议先关 |
 | `junpinhui/daily.py` | 每天定时 | 需 YYB + `access_token`；见子目录 |
 | `tuiguangbao/daily.py` | 每天定时 `0 9 * * *` | 环境变量 `TGB` 或 `TGB_ACCOUNTS`；超时建议 ≥15～20min |
@@ -118,7 +118,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 …/bilibili/get_cookie.py
 …/fanghua/main.py
 …/fanghua/crypto_api.py      ← 库文件，若自动生成任务请「禁用」勿删
-…/bafu/ads_yyb.py
+…/bafu/ads_app.py
 …/fun/mine.py
 …/tuiguangbao/daily.py       ← 推广宝任务入口
 …/duoxiang/daily.py          ← 多象签到/领收益/提现
@@ -181,7 +181,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 │   ├── requirements.txt
 │   └── README.md
 ├── bafu/
-│   ├── ads_yyb.py            # 八富 YYB 协议看广告 + Bark
+│   ├── ads_app.py            # 八富 App 协议看广告 + Bark
 │   ├── requirements.txt
 │   └── README.md
 ├── fun/
