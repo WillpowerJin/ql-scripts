@@ -32,7 +32,7 @@ Discuz 插件「推广宝」每日任务：登录 → 绑邀请码 → 模拟看
 根目录 [README](../README.md) 已更新白名单，包含 `tuiguangbao`。把订阅**白名单**改成：
 
 ```text
-hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao
+hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|tuiguangbao
 ```
 
 **黑名单**保持：

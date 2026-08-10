@@ -34,7 +34,7 @@
 根目录 [README](../README.md) 通用订阅。白名单加入 `duoxiang`：
 
 ```text
-hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|junpinhui|tuiguangbao|duoxiang
+hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|tuiguangbao|duoxiang
 ```
 
 黑名单保持：`pull_access_token`  
