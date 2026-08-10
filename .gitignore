@@ -26,6 +26,7 @@ yyb-go/
 **/session_cache.json
 **/bafu_session_cache.json
 **/bfsh_session_cache.json
+**/bfsh_v2_cache.json
 **/tuiguangbao_session_cache.json
 **/login_qr.png
 **/login_qr.html

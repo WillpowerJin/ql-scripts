@@ -2,21 +2,25 @@
 
 | 脚本 | 说明 | 依赖 |
 |------|------|------|
-| **[`ads_app.py`](./ads_app.py)** | **新版 App 协议**（手机号密码 + markmedia） | 环境变量 `BAFU` |
+| **[`ads_mp.py`](./ads_mp.py)** | **小程序协议**看广告（YYB GO + `/ad/complete`） | 环境变量 `YYB_GO` |
 
 > 仅供学习。账号安全与封禁风险自负。
 
 ---
 
-## 青龙：App 协议看广告 `ads_app.py`
+## 青龙：`ads_mp.py`
 
-基于新版 App 登录与 markmedia 激励上报，**不依赖 YYB / 微信**。
+逻辑：
+
+1. YYB GO 取 `wx.login` / 手机号 code  
+2. `getOpenidAnon` → `phoneLogin`  
+3. 人机 captcha → `checkLimit` → `POST /ad/complete`（Feistel token）
 
 ### 订阅
 
-白名单加上 **`bafu`**（或 `ads_app`）。
+白名单加上 **`bafu`**（或 `ads_mp`）。
 
-会拉到：`bafu/ads_app.py`。
+会拉到：`bafu/ads_mp.py`。
 
 ### 依赖
 
@@ -29,15 +33,23 @@ requests
 **账号（必填）：**
 
 ```text
-BAFU=手机号#密码
+YYB_GO=host:port@ref
 ```
 
-多账号换行或 `&`；**备注**写在第三个 `#` 后（日志 / Bark 显示名）：
+多账号换行或 `&`；**自定义备注**写在最后一个 `#` 后（日志 / Bark 显示名）：
 
 ```text
-BAFU=13800138000#pass123#主号
-13900139000#pass456#副号
+YYB_GO=192.168.2.199:8000@owNAXHSWnZNI#iPhone
+192.168.2.199:8000@owNAxxxxxxxx#家里
 ```
+
+或一行：
+
+```text
+YYB_GO=192.168.2.199:8000@ref1#iPhone & 192.168.2.199:8000@ref2#Android
+```
+
+不写备注时，显示名为 `ref` 前 8 位 + `...`。
 
 **全局备注**（进 Bark 标题，区分多台青龙）：
 
@@ -50,34 +62,32 @@ BAFU_NOTE=家里青龙
 ```text
 BARK_KEY=你的Key
 # 或 BARK_URL=https://api.day.app/你的Key/
-# 可选 BARK_GROUP=八富秒得
+# 可选 BARK_GROUP=八富生活小程序
 # 可选 BARK_SOUND=bell
 ```
 
 **可选：**
 
 ```text
-BFSH_INVITER_CODE=U75803F7   # 邀请码（未绑定时尝试绑定）
-DRY_RUN=1                    # 只登录查进度，不刷广告
-BAFU_AD_WAIT=32              # 模拟观看秒数，默认 32
-BAFU_AD_INTERVAL=5           # 条间间隔秒数，默认 5
+BFSH_INVITER_CODE=U75803F7   # 邀请码
+BFSH_FORCE_REBIND=0          # 已绑定则不改绑（默认会尝试 setInviter）
+DRY_RUN=1                    # 只查询进度，不 complete
+QYWX_KEY=...                 # 可选，企业微信机器人
 ```
 
 ### 定时任务
 
 | 名称 | 命令 | cron 建议 |
 |------|------|-----------|
-| 八富秒得App | `python3 -u .../bafu/ads_app.py` | `0 9-23/2 * * *` |
+| 八富生活小程序 | `python3 -u .../bafu/ads_mp.py` | `0 9-23/2 * * *` |
 
-任务超时建议 ≥ 30 分钟（多号 × 每号可能多条广告，每条约 35s+）。
-
-跑完会 **Bark** 推送汇总（未配置则只打日志）。
+任务超时建议 ≥ 30 分钟。跑完会 **Bark** 推送汇总（未配置则只打日志）。
 
 ### 注意
 
-1. 账号格式为 **App 手机号 + 密码**，与小程序 openid 无关。  
+1. 账号来自 **YYB GO 的微信 ref**，不是 App 手机号密码。  
 2. 已达当日上限会自动结束该号。  
-3. 连续失败（物料/计数不涨）会中止该号，避免死循环。  
+3. captchaToken 按日缓存到 `bfsh_v2_cache.json`（脚本同目录）。  
 4. 邀请绑定失败一般不挡看广告。
 
 ---
@@ -86,7 +96,7 @@ BAFU_AD_INTERVAL=5           # 条间间隔秒数，默认 5
 
 ```text
 bafu/
-  ads_app.py         # 青龙入口（App 协议 + Bark）
+  ads_mp.py          # 青龙入口（小程序协议 + YYB_GO 备注 + Bark）
   requirements.txt
   README.md
 ```
