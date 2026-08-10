@@ -16,7 +16,7 @@
 | 目录 | 入口脚本 | 说明 | 文档 |
 |------|----------|------|------|
 | [hifiti](./hifiti/) | `checkin.py` | [HiFiNi 音乐磁场](https://www.hifiti.com/) 每日签到（Cookie 优先，失效可密码重登） | [说明](./hifiti/README.md) |
-| [wangchao](./wangchao/) | `read_gift.py` | 望潮「阅读有礼」：多号自动阅读；**默认仅第 1 号自动抽奖** | [说明](./wangchao/README.md) |
+| [wangchao](./wangchao/) | `read_gift.py` | 望潮「阅读有礼」：多号自动阅读；**默认不自动抽奖**（App 手动） | [说明](./wangchao/README.md) |
 | [xijiu](./xijiu/) | `daily.py` | 习酒君品荟：积分相关 + 文旅酒谷（种养/任务等） | [说明](./xijiu/README.md) |
 | [quark](./quark/) | `quark_checkin.py` | 夸克网盘每日签到领空间（需抓包参数） | [说明](./quark/README.md) |
 | [bilibili](./bilibili/) | `get_cookie.py` + `daily.py` | B 站：扫码获取 Cookie + 每日经验任务（无需 App 抓包） | [说明](./bilibili/README.md) |
@@ -33,7 +33,7 @@
 | 脚本 | 青龙任务建议 | 备注 |
 |------|----------------|------|
 | `hifiti/checkin.py` | 每天定时 | 环境变量见子目录 README |
-| `wangchao/read_gift.py` | 每天定时 | 多号抽奖策略见文档 |
+| `wangchao/read_gift.py` | 每天定时 | 默认全号只阅读；抽奖策略见文档 |
 | `xijiu/daily.py` | 每天定时 | `pull_access_token.py` 仅本地 root 安卓用，订阅已排除 |
 | `quark/quark_checkin.py` | 每天定时 | `COOKIE_QUARK` 等 |
 | `bilibili/get_cookie.py` | **手动**（Cookie 失效时） | 手机 B 站扫码 |

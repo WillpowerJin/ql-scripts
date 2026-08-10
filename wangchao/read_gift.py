@@ -27,13 +27,13 @@ new Env('望潮阅读有礼');
   也可在配置里显式写 device_id；勿多号共用同一值
 
 【重点 · 抽奖策略 — 默认】
-  ★ 仅配置列表中的【第 1 个账号】自动抽奖
-  ★ 第 2、第 3… 个账号：只完成阅读任务，不自动抽奖
-  ★ 副号若要抽奖：请用手机流量在 App 内手动抽（同 IP 会判「同一设备」）
-  可在账号上写 lottery: true/false 覆盖默认；首号 lottery: false 也可关掉
+  ★ 所有账号默认只完成阅读任务，不自动抽奖
+  ★ 抽奖请用手机流量在望潮 App 内手动完成（更稳，避免「账号异常」）
+  ★ 仅当账号显式 lottery: true（且全局抽奖开启）时脚本才自动抽
+  同出口 IP 多号自动抽极易触发「同一设备 / 账号异常」，故默认全关
 
 可选：
-  WANGCHAO_LOTTERY=0
+  WANGCHAO_LOTTERY=1          # 打开全局抽奖开关（仍需账号 lottery: true）
   WANGCHAO_BASE_URL=https://xmt.taizhou.com.cn
 
 青龙环境变量（Bark 通知，与 hifiti 共用）：
@@ -216,7 +216,7 @@ class Account:
         )
 
     def wants_lottery(self, global_enable: bool) -> bool:
-        """是否对本号执行自动抽奖。lottery 在 load_config 后已按「仅首号」落默认值。"""
+        """是否对本号执行自动抽奖。lottery 在 load_config 后默认 false。"""
         if not global_enable:
             return False
         if self.lottery is None:
@@ -226,18 +226,16 @@ class Account:
 
 def apply_default_lottery_policy(accounts: List[Account]) -> None:
     """
-    【重点】默认抽奖策略（无代理 / 同出口 IP 场景）：
+    【重点】默认抽奖策略：
 
-    - 第 1 个账号：自动抽奖（lottery 未写时视为 true）
-    - 第 2、3… 个账号：只阅读，不自动抽奖（lottery 未写时视为 false）
-    - 副号抽奖请在 App 内手动完成（建议手机流量，避免「同一设备」）
-
-    账号显式配置 lottery: true/false 时尊重配置（例如有独立 proxy 可手动打开）。
+    - 所有账号：只阅读，不自动抽奖（lottery 未写时视为 false）
+    - 抽奖请在 App 内手动完成（建议手机流量，避免「同一设备 / 账号异常」）
+    - 仅当账号显式 lottery: true 时脚本才自动抽（通常还需独立 proxy）
     """
-    for i, acc in enumerate(accounts):
+    for acc in accounts:
         if acc.lottery is not None:
             continue
-        acc.lottery = i == 0
+        acc.lottery = False
 
 
 @dataclass
@@ -558,7 +556,7 @@ def load_config(path: Optional[Path] = None) -> AppConfig:
             "未配置账号。请填写 phone/password，或 WANGCHAO_ACCOUNTS / config.yaml"
         )
 
-    # 【重点】仅首号默认抽奖，其余只阅读（显式 lottery 配置优先）
+    # 【重点】默认全号只阅读；显式 lottery: true 才允许自动抽
     apply_default_lottery_policy(accounts)
 
     api = raw.get("api") or {}
@@ -566,9 +564,13 @@ def load_config(path: Optional[Path] = None) -> AppConfig:
     log = raw.get("log") or {}
     n = raw.get("notify") or {}
 
-    do_lottery = True
-    if _env("WANGCHAO_LOTTERY") in ("0", "false", "False"):
+    # 全局抽奖默认关闭；需 WANGCHAO_LOTTERY=1 或 lottery.enable=true 才开
+    do_lottery = False
+    env_lot = _env("WANGCHAO_LOTTERY")
+    if env_lot in ("0", "false", "False"):
         do_lottery = False
+    elif env_lot in ("1", "true", "True"):
+        do_lottery = True
     elif "enable" in lottery:
         do_lottery = bool(lottery.get("enable"))
 
@@ -1453,7 +1455,7 @@ def _fmt_lottery_line(lot: Dict[str, Any]) -> str:
     msg = str(lot.get("msg") or "").strip()
     prize = lot.get("prize")
     if lot.get("skipped"):
-        return f"🎁 抽奖：跳过（仅首号自动；副号请 App 手动）"
+        return f"🎁 抽奖：跳过（默认只阅读；请 App 手动）"
     if lot.get("already") or "已抽" in msg or "明天" in msg:
         return f"🎁 抽奖：今日已抽过，明天再来"
     if lot.get("same_device") or "同一设备" in msg:
@@ -1598,7 +1600,7 @@ def run_account(account: Account, cfg: AppConfig, dry_run: bool) -> Dict[str, An
             logger.info("[%s] 🎯 阅读已满，开始抽奖 …", account.name)
             out["lottery"] = client.lottery_draw()
         elif not do_lot:
-            # 【重点】副号默认不抽奖
+            # 【重点】默认全号只阅读
             if cfg.do_lottery:
                 logger.info(
                     "[%s] ⏸️【重点】本号不自动抽奖（仅阅读）；"
@@ -1606,7 +1608,10 @@ def run_account(account: Account, cfg: AppConfig, dry_run: bool) -> Dict[str, An
                     account.name,
                 )
             else:
-                logger.info("[%s] ⏸️ 全局已关闭抽奖", account.name)
+                logger.info(
+                    "[%s] ⏸️ 默认只阅读、不自动抽奖；请在 App 内手动抽",
+                    account.name,
+                )
         elif do_lot and not dry_run and not read_result.get("ok"):
             logger.info(
                 "[%s] ⏸️ 未读满（%s/%s），跳过抽奖",
@@ -1706,9 +1711,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     # 【重点】启动时醒目标记抽奖策略
     logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    logger.info("★【重点】抽奖策略（同出口 IP 限制）")
-    logger.info("  · 仅第 1 个账号默认自动抽奖；第 2/3… 号只完成阅读")
-    logger.info("  · 副号抽奖请手动：手机流量 + 望潮 App")
+    logger.info("★【重点】抽奖策略（默认全关，降低账号异常）")
+    logger.info("  · 所有账号默认只完成阅读，不自动抽奖")
+    logger.info("  · 抽奖请手动：手机流量 + 望潮 App")
+    logger.info("  · 若确需脚本抽奖：全局 lottery.enable=true 且账号 lottery: true")
     if lottery_names:
         logger.info("  · 本轮自动抽奖：%s", "、".join(lottery_names))
     else:
@@ -1742,7 +1748,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             if not acc.wants_lottery(cfg.do_lottery):
                 logger.info(
                     "[%s] ⏸️【重点】本号不自动抽奖，跳过；"
-                    "副号请用手机流量在 App 内手动抽",
+                    "请用手机流量在 App 内手动抽",
                     acc.name,
                 )
                 results.append(
@@ -1751,7 +1757,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                         "ok": True,
                         "lottery": {
                             "ok": True,
-                            "msg": "已跳过自动抽奖（非首号/已关闭）",
+                            "msg": "已跳过自动抽奖（默认只阅读/已关闭）",
                             "already": False,
                             "same_device": False,
                             "skipped": True,

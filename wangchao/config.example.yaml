@@ -3,12 +3,11 @@
 
 accounts:
   # =====================================================================
-  # ★【重点】抽奖策略（默认，同出口 IP / 无代理时必读）
-  #   1. 列表中【第 1 个账号】→ 自动阅读 + 自动抽奖
-  #   2. 第 2、第 3… 个账号 → 只自动完成阅读，不抽奖
-  #   3. 副号若要抽奖 → 请用手机流量在望潮 App 内手动抽
-  #   原因：抽奖站按公网 IP 限「同一设备一天一次」，与 deviceId 无关
-  #   覆盖：账号写 lottery: true/false；或全局 lottery.enable / WANGCHAO_LOTTERY=0
+  # ★【重点】抽奖策略（默认）
+  #   1. 所有账号 → 只自动完成阅读，不自动抽奖
+  #   2. 抽奖 → 请用手机流量在望潮 App 内手动完成
+  #   3. 原因：抽奖站按公网 IP / 设备会话风控，「账号异常」高发
+  #   覆盖：账号写 lottery: true；并设 lottery.enable: true / WANGCHAO_LOTTERY=1
   # =====================================================================
 
   # 推荐：手机号 + 密码（脚本自动登录并获取 account/session）
@@ -17,15 +16,14 @@ accounts:
     phone: "1xxxxxxxxxx"
     password: "你的密码"
     # device_id: ""
-    # proxy: ""                 # 可选；有独立出口时可给副号配 proxy 并 lottery: true
-    # lottery: true             # 首号默认 true，一般不用写
-    # app_unique_id: ""         # App 内抓包的「设备唯一 sessionId」，用于 loginWC；未配置时回退到 vapp session
+    # proxy: ""                 # 可选；有独立出口且要脚本抽奖时再配
+    # lottery: true             # 默认 false（只阅读）；显式 true 才自动抽
+    # app_unique_id: ""         # App 内抓包的「设备唯一 sessionId」，用于 loginWC
 
   - name: "号2"
     phone: "1yyyyyyyyyy"
     password: "你的密码2"
-    # lottery: false            # 第 2 个起默认 false（只阅读）；可省略
-    # 抽奖请手动：手机流量 + App
+    # 默认只阅读；抽奖请手动：手机流量 + App
 
   - name: "号3"
     phone: "1zzzzzzzzzz"
@@ -54,8 +52,9 @@ api:
   start_jitter: 300
 
 lottery:
-  # 全局总开关；true 时仍只对「允许抽奖」的账号自动抽（默认仅首号）
-  enable: true
+  # 全局总开关；默认 false（全号只阅读）
+  # 若要脚本抽奖：设 true，并在对应账号写 lottery: true
+  enable: false
   base_url: "https://srv-app.taizhou.com.cn"
   activity_id: 67
 
