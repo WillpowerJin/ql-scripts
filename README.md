@@ -39,7 +39,7 @@
 | `bilibili/get_cookie.py` | **手动**（Cookie 失效时） | 手机 B 站扫码 |
 | `bilibili/daily.py` | 每天定时 | 依赖扫码缓存的 Cookie |
 | `fanghua/main.py` | 每天定时 | 单号默认最长约 2h，任务超时请调大 |
-| `bafu/ads_mp.py` | 每天定时 / 隔几小时 | 需 `YYB_GO=host:port@ref[#备注]`；超时建议 ≥30min |
+| `bafu/ads_mp.py` | 每天 `0 8 * * *` | 需 `YYB_GO=host:port@ref[#备注]`；超时建议 ≥30min |
 | `fun/mine.py` | 每天定时 | 环境变量 `FUN`；收矿开、升级建议先关 |
 | `junpinhui/daily.py` | 每天定时 | 需 YYB + `access_token`；见子目录 |
 | `tuiguangbao/daily.py` | 每天定时 `0 9 * * *` | 环境变量 `TGB` 或 `TGB_ACCOUNTS`；超时建议 ≥15～20min |
