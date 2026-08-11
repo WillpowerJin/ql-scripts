@@ -49,7 +49,7 @@ cron: 0 8 * * *
 
 三、（可选）Bark 通知
 
-    环境变量（与 hifiti / wangchao 等脚本共用同一套）：
+    环境变量（与 hifiti / quark 等脚本共用同一套）：
       BARK_URL     完整推送地址，如 https://api.day.app/你的Key/
       或 BARK_KEY  只填 Key，服务器用 BARK_SERVER（默认 https://api.day.app）
       BARK_GROUP   分组名，默认「夸克签到」

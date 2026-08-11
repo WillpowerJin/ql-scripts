@@ -222,7 +222,7 @@ class Account:
 
 @dataclass
 class NotifyConfig:
-    # Bark：完整 URL 或 key+server（与 hifiti / wangchao 共用 BARK_*）
+    # Bark：完整 URL 或 key+server（与 hifiti / quark 等共用 BARK_*）
     bark_url: str = ""
     bark_key: str = ""
     bark_server: str = DEFAULT_BARK_SERVER
@@ -1532,7 +1532,7 @@ class XiJiuClient:
 
 
 # ---------------------------------------------------------------------------
-# 通知：Bark 为主 + 美观摘要（对齐 hifiti / wangchao）
+# 通知：Bark 为主 + 美观摘要（对齐 hifiti / quark 等）
 # ---------------------------------------------------------------------------
 
 def _build_bark_endpoint(cfg: NotifyConfig) -> Optional[str]:

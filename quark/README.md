@@ -12,7 +12,7 @@
 2. 支持两种写法：**整段 URL**（推荐）或 `kps; sign; vcode` 拆开写
 3. 先请求 `growth/info` 查容量、身份、今日是否签过
 4. 未签过 → `growth/sign` 触发签到 → 拿到今日奖励字节 + 连签进度
-5. Bark 推送汇总（可选，与 hifiti / wangchao 共用同一套环境变量）
+5. Bark 推送汇总（可选，与 hifiti / quark 共用同一套环境变量）
 
 ## 仓库内文件
 
@@ -123,7 +123,7 @@ user=张三; kps=abc; sign=def; vcode=123
 
 三个签名值保留 URL 编码原样即可，脚本会直接透传给夸克接口。
 
-## 环境变量（Bark，可选，与 hifiti / wangchao 共用）
+## 环境变量（Bark，可选，与 hifiti / quark 共用）
 
 | 变量 | 说明 |
 |------|------|

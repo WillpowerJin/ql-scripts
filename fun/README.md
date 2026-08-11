@@ -14,7 +14,7 @@ API：`https://exchange.acmes.dev/api/v1`
 白名单加上 **`fun`**：
 
 ```text
-hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun
+hifiti|xijiu|quark|bilibili|fanghua|bafu|fun|tuiguangbao|aliyun_dev|kuailefeng
 ```
 
 会拉到：`fun/mine.py`

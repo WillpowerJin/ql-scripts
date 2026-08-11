@@ -40,7 +40,7 @@
 在原有白名单末尾加上 `aliyun_dev`：
 
 ```text
-hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|tuiguangbao|aliyun_dev
+hifiti|xijiu|quark|bilibili|fanghua|bafu|fun|tuiguangbao|aliyun_dev|kuailefeng
 ```
 
 | 字段 | 值 |

@@ -16,7 +16,6 @@
 | 目录 | 入口脚本 | 说明 | 文档 |
 |------|----------|------|------|
 | [hifiti](./hifiti/) | `checkin.py` | [HiFiNi 音乐磁场](https://www.hifiti.com/) 每日签到（Cookie 优先，失效可密码重登） | [说明](./hifiti/README.md) |
-| [wangchao](./wangchao/) | `read_gift.py` | 望潮「阅读有礼」：多号自动阅读；**默认不自动抽奖**（App 手动） | [说明](./wangchao/README.md) |
 | [xijiu](./xijiu/) | `daily.py` | 习酒君品荟：积分相关 + 文旅酒谷（种养/任务等） | [说明](./xijiu/README.md) |
 | [quark](./quark/) | `quark_checkin.py` | 夸克网盘每日签到领空间（需抓包参数） | [说明](./quark/README.md) |
 | [bilibili](./bilibili/) | `get_cookie.py` + `daily.py` | B 站：扫码获取 Cookie + 每日经验任务（无需 App 抓包） | [说明](./bilibili/README.md) |
@@ -25,13 +24,13 @@
 | [fun](./fun/) | `mine.py` | FUN 矿池：登录收矿/可选升级 + Bark | [说明](./fun/README.md) |
 | [tuiguangbao](./tuiguangbao/) | `daily.py` | 推广宝：登录看广告领奖（对齐 2.5 + Bark） | [说明](./tuiguangbao/README.md) |
 | [aliyun_dev](./aliyun_dev/) | `daily.py` | 阿里云开发者社区：签到/互动/领积分（支持账密或 Cookie） | [说明](./aliyun_dev/README.md) |
+| [kuailefeng](./kuailefeng/) | `daily.py` | 快乐蜂：手机号密码登录 + 免费/转盘抽奖（`/check` 自适应）+ Bark | [说明](./kuailefeng/README.md) |
 
 ### 入口与定时建议
 
 | 脚本 | 青龙任务建议 | 备注 |
 |------|----------------|------|
 | `hifiti/checkin.py` | 每天定时 | 环境变量见子目录 README |
-| `wangchao/read_gift.py` | 每天定时 | 默认全号只阅读；抽奖策略见文档 |
 | `xijiu/daily.py` | 每天定时 | `pull_access_token.py` 仅本地 root 安卓用，订阅已排除 |
 | `quark/quark_checkin.py` | 每天定时 | `COOKIE_QUARK` 等 |
 | `bilibili/get_cookie.py` | **手动**（Cookie 失效时） | 手机 B 站扫码 |
@@ -41,6 +40,7 @@
 | `fun/mine.py` | 每天定时 | 环境变量 `FUN`；收矿开、升级建议先关 |
 | `tuiguangbao/daily.py` | 每天定时 `0 9 * * *` | 环境变量 `TGB` 或 `TGB_ACCOUNTS`；超时建议 ≥15～20min |
 | `aliyun_dev/daily.py` | 每天 **两次** `0 7,13 * * *`（都跑完整版） | Cookie：`aliyunWeb_data` / `ALIYUN_ACCOUNTS`；含领待收积分；超时 ≥15min |
+| `kuailefeng/daily.py` | 每天定时 `0 9 * * *` | `KLF_ACCOUNTS` 或 `KLF=手机号#密码`；间隔默认随机 5–8s |
 
 ---
 
@@ -58,7 +58,7 @@
 类型：     公开仓库
 链接：     https://github.com/WillpowerJin/ql-scripts.git
 分支：     main
-白名单：   hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|tuiguangbao|aliyun_dev
+白名单：   hifiti|xijiu|quark|bilibili|fanghua|bafu|fun|tuiguangbao|aliyun_dev|kuailefeng
 黑名单：   pull_access_token
 扩展名：   py
 定时规则： 30 8 * * *
@@ -73,7 +73,7 @@ pull_access_token
 **只复制白名单：**
 
 ```text
-hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|tuiguangbao|aliyun_dev
+hifiti|xijiu|quark|bilibili|fanghua|bafu|fun|tuiguangbao|aliyun_dev|kuailefeng
 ```
 
 | 字段 | 说明 |
@@ -99,14 +99,13 @@ https://ghfast.top/https://github.com/WillpowerJin/ql-scripts.git
 在青龙容器内：
 
 ```bash
-ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|quark|bilibili|fanghua|bafu|fun|tuiguangbao|aliyun_dev" "pull_access_token" "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilibili|fanghua|bafu|fun|tuiguangbao|aliyun_dev|kuailefeng" "pull_access_token" "" "main" "py"
 ```
 
 拉取成功后，脚本管理中应类似：
 
 ```text
 …/hifiti/checkin.py
-…/wangchao/read_gift.py
 …/xijiu/daily.py
 …/quark/quark_checkin.py
 …/bilibili/daily.py
@@ -117,6 +116,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 …/fun/mine.py
 …/tuiguangbao/daily.py       ← 推广宝任务入口
 …/aliyun_dev/daily.py        ← 阿里云开发者社区
+…/kuailefeng/daily.py        ← 快乐蜂抽奖
 ```
 
 不应把 `pull_access_token.py` 建成任务（黑名单已排除）。
@@ -128,7 +128,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 - `BARK_URL` 完整推送地址，或  
 - `BARK_KEY` + 可选 `BARK_SERVER`  
 
-细节见 [hifiti/README.md](./hifiti/README.md)、[wangchao/README.md](./wangchao/README.md)。
+细节见 [hifiti/README.md](./hifiti/README.md)、[kuailefeng/README.md](./kuailefeng/README.md)。
 
 ---
 
@@ -141,11 +141,6 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 ├── .venv/                    # 本地开发用（不进 git）
 ├── hifiti/
 │   ├── checkin.py
-│   ├── config.example.yaml
-│   ├── requirements.txt
-│   └── README.md
-├── wangchao/
-│   ├── read_gift.py
 │   ├── config.example.yaml
 │   ├── requirements.txt
 │   └── README.md
@@ -187,8 +182,13 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|wangchao|xijiu|qu
 │   ├── config.example.yaml
 │   ├── requirements.txt
 │   └── README.md
-└── aliyun_dev/
-    ├── daily.py              # 阿里云开发者社区日常
+├── aliyun_dev/
+│   ├── daily.py              # 阿里云开发者社区日常
+│   ├── config.example.yaml
+│   ├── requirements.txt
+│   └── README.md
+└── kuailefeng/
+    ├── daily.py              # 快乐蜂转盘抽奖（账密登录 + /check 自适应）
     ├── config.example.yaml
     ├── requirements.txt
     └── README.md
@@ -216,10 +216,10 @@ cd bilibili
 python get_cookie.py          # 扫码
 python daily.py               # 任务
 
-# 示例：望潮
-cd ../wangchao
+# 示例：快乐蜂
+cd ../kuailefeng
 cp config.example.yaml config.yaml   # 填写后勿提交
-python read_gift.py --dry-run
+python daily.py --dry-run
 ```
 
 青龙面板侧仍按各脚本文档用系统/容器环境安装依赖，不必使用本机的根 `.venv`。
