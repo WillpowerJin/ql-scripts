@@ -24,6 +24,8 @@ yyb-go/
 **/cookie_cache.json
 **/token_cache.json
 **/session_cache.json
+**/device_cache.json
+**/fun_device_cache.json
 **/bafu_session_cache.json
 **/bfsh_session_cache.json
 **/bfsh_v2_cache.json

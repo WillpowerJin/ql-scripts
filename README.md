@@ -21,7 +21,7 @@
 | [bilibili](./bilibili/) | `get_cookie.py` + `daily.py` | B 站：扫码获取 Cookie + 每日经验任务（无需 App 抓包） | [说明](./bilibili/README.md) |
 | [fanghua](./fanghua/) | `main.py` | 芳华未来：手机号密码登录 + 签到/刷视频挂机 | [说明](./fanghua/README.md) |
 | [bafu](./bafu/) | `ads_mp.py` | 八富生活：小程序协议看广告（`YYB_GO`+备注）+ Bark | [说明](./bafu/README.md) |
-| [fun](./fun/) | `mine.py` | FUN 矿池：登录收矿/可选升级 + Bark | [说明](./fun/README.md) |
+| [fun](./fun/) | `mine.py` | FUN 矿池：登录收矿/可选升级 + Bark（首次新设备短信绑定） | [说明](./fun/README.md) |
 | [tuiguangbao](./tuiguangbao/) | `daily.py` | 推广宝：登录看广告领奖（对齐 2.5 + Bark） | [说明](./tuiguangbao/README.md) |
 | [aliyun_dev](./aliyun_dev/) | `daily.py` | 阿里云开发者社区：签到/互动/领积分（支持账密或 Cookie） | [说明](./aliyun_dev/README.md) |
 | [kuailefeng](./kuailefeng/) | `daily.py` | 快乐蜂：手机号密码登录 + 免费/转盘抽奖（`/check` 自适应）+ Bark | [说明](./kuailefeng/README.md) |
@@ -37,7 +37,7 @@
 | `bilibili/daily.py` | 每天定时 | 依赖扫码缓存的 Cookie |
 | `fanghua/main.py` | 每天定时 | 单号默认最长约 2h，任务超时请调大 |
 | `bafu/ads_mp.py` | 每天 `0 8 * * *` | 需 `YYB_GO=host:port@ref[#备注]`；超时建议 ≥30min |
-| `fun/mine.py` | 每天定时 | 环境变量 `FUN`；收矿开、升级建议先关 |
+| `fun/mine.py` | 每天定时 | 环境变量 `FUN`；**首次新设备要短信绑定**（`FUN_CAPTCHA`），之后定时即可；收矿开、升级建议先关 |
 | `tuiguangbao/daily.py` | 每天定时 `0 9 * * *` | 环境变量 `TGB` 或 `TGB_ACCOUNTS`；超时建议 ≥15～20min |
 | `aliyun_dev/daily.py` | 每天 **两次** `0 7,13 * * *`（都跑完整版） | Cookie：`aliyunWeb_data` / `ALIYUN_ACCOUNTS`；含领待收积分；超时 ≥15min |
 | `kuailefeng/daily.py` | 每天定时 `0 9 * * *` | `KLF_ACCOUNTS` 或 `KLF=手机号#密码`；间隔默认随机 5–8s |
