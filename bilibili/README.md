@@ -207,7 +207,7 @@ https://ghfast.top/https://raw.githubusercontent.com/WillpowerJin/ql-scripts/mai
 3. **从后台划掉 B 站再开**，进首页后再点「我的」（热启动往往打不出 fingerprint）  
 4. 通知标题应是 `📺 B站Cookie·v2`：  
    - **已缓存 / 已更新**：成功  
-   - **重写已命中，但 Cookie 不完整**：脚本跑到了，请求里没有 SESSDATA。再划掉重开一次；仍不行看 QX 日志搜 `bili-cookie`  
+   - **重写已命中，但还不是网页 Cookie**：正常。App 首页/「我的」走原生接口，只有 `access_key`，没有 `SESSDATA`。再打开 **直播、漫画、或「我的 → 大会员」**（这些是内置网页，才会带 SESSDATA）  
    - **完全没通知、日志也没有 `bili-cookie`**：重写没执行。多半是脚本没下下来，或流量没进 MitM（可在 QX 里关 HTTP/3 后再试）
 
 ---

@@ -119,19 +119,23 @@
       return;
     }
     setPref(KEY_BAD_COOL, now + BAD_COOL_MS);
+    const reason = token
+      ? "这是 App 原生接口，只带 access_key，没有网页 SESSDATA（正常）"
+      : "这次请求里没有 SESSDATA / bili_jct";
     $notify(
       "📺 B站Cookie·" + VERSION,
-      "重写已命中，但 Cookie 不完整",
+      "重写已命中，但还不是网页 Cookie",
       [
-        "路径: " + path,
-        "Cookie头: " + (raw ? "有(" + raw.length + "字)" : "无"),
-        "SESSDATA: " + (sess ? "有" : "无"),
-        "bili_jct: " + (jct ? "有" : "无"),
-        "DedeUserID: " + (mid || "无"),
-        "access_key: " + (token ? "有" : "无"),
+        reason,
         "",
-        "请：后台划掉 B 站 → 再开到首页 → 点「我的」",
-        "仍如此：QX 日志搜 bili-cookie",
+        "路径: " + path,
+        "Cookie头: " + (raw ? "有(" + raw.length + "字，多半是 buvid)" : "无"),
+        "SESSDATA: " + (sess ? "有" : "无") + "  bili_jct: " + (jct ? "有" : "无"),
+        "access_key: " + (token ? "有（已缓存）" : "无"),
+        "",
+        "请再打开 App 里带网页的页面：",
+        "直播 / 漫画 / 我的→大会员",
+        "出现「已缓存/已更新」才算抓到。",
       ].join("\n")
     );
     $done({});
