@@ -171,10 +171,16 @@ https://ghfast.top/https://github.com/WillpowerJin/ql-scripts.git
 
 ### 任务图库（推荐，一键导入）
 
-推仓库后，在 Quantumult X 里加这一条即可（和 blackmatrix7 的 gallery 用法一样）：
+在 Quantumult X 里加这一条（jsDelivr，国内比 GitHub raw 稳）：
 
 ```text
-https://raw.githubusercontent.com/WillpowerJin/ql-scripts/main/quantumultx/gallery.json
+https://cdn.jsdelivr.net/gh/WillpowerJin/ql-scripts@main/quantumultx/gallery.json
+```
+
+镜像备用：
+
+```text
+https://ghfast.top/https://raw.githubusercontent.com/WillpowerJin/ql-scripts/main/quantumultx/gallery.json
 ```
 
 步骤：
@@ -183,18 +189,26 @@ https://raw.githubusercontent.com/WillpowerJin/ql-scripts/main/quantumultx/galle
 2. 进入图库，打开 **B站每日任务** → 添加  
 3. 提示关联重写时选 **是**（会带上「B站_获取Cookie」）  
 4. **MitM** 已信任证书，且主机名含 `app.bilibili.com`  
-5. 打开 **哔哩哔哩 App**，弹出 `📺 B站Cookie·v1` 即抓成功  
-6. 等到早上 7:30，或在任务列表里手动跑一次「B站每日任务」
+5. **后台划掉**哔哩哔哩（不要只切到桌面）→ 再打开进首页 → 点「我的」  
+6. 弹出 `📺 B站Cookie·v2` 即抓成功；再到任务列表手动跑一次每日任务  
 
 默认不投币（保硬币）。以后要投币：任务参数填 `coin=5`。
 
-直连 GitHub 失败可改镜像，例如：
-
-```text
-https://ghfast.top/https://raw.githubusercontent.com/WillpowerJin/ql-scripts/main/quantumultx/gallery.json
-```
+若你已经加过旧图库：重写列表里找到 **B站_获取Cookie**，**右滑更新**；任务脚本同样更新一次。
 
 也可以只用抓 Cookie、任务仍给青龙跑：图库添加后把重写留下、把定时任务关掉即可。
+
+### 没有弹出 Cookie 通知时
+
+按顺序查：
+
+1. 重写资源 **B站_获取Cookie** 是开着的，并已「更新」（脚本地址应是 jsDelivr，不是 `raw.githubusercontent.com`）  
+2. MitM 总开关打开，证书已信任，主机名有 `app.bilibili.com`（不要在「跳过 MitM」里）  
+3. **从后台划掉 B 站再开**，进首页后再点「我的」（热启动往往打不出 fingerprint）  
+4. 通知标题应是 `📺 B站Cookie·v2`：  
+   - **已缓存 / 已更新**：成功  
+   - **重写已命中，但 Cookie 不完整**：脚本跑到了，请求里没有 SESSDATA。再划掉重开一次；仍不行看 QX 日志搜 `bili-cookie`  
+   - **完全没通知、日志也没有 `bili-cookie`**：重写没执行。多半是脚本没下下来，或流量没进 MitM（可在 QX 里关 HTTP/3 后再试）
 
 ---
 
@@ -215,7 +229,7 @@ hostname = app.bilibili.com
 
 3. 把 `bilibili_cookie.js` 放到：文件 App → iCloud / 我的 iPhone → **Quantumult X → Scripts**
 4. 右下角圆形按钮 **重载配置**
-5. 打开 **哔哩哔哩 App**，应弹出 `📺 B站Cookie·v1`  
+5. **后台划掉** B 站再打开，进首页并点「我的」，应弹出 `📺 B站Cookie·v2`  
    正文就是可直接贴到青龙的：
 
 ```text

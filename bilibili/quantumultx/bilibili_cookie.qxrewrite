@@ -1,4 +1,6 @@
-# B 站 Cookie 抓取（打开哔哩哔哩 App 自动写入 $prefs.bili_cookie）
-# 配合图库任务「B站每日任务」使用
+; B 站 Cookie 抓取（后台划掉 App 再进首页 /「我的」）
+; 脚本走 jsDelivr，避免 GitHub raw 在国内拉不下来导致重写空跑
 hostname = app.bilibili.com
-^https?:\/\/app\.bilibili\.com\/x\/(resource\/fingerprint|v2\/account\/myinfo) url script-request-header https://raw.githubusercontent.com/WillpowerJin/ql-scripts/main/bilibili/quantumultx/bilibili_cookie.js
+^https?:\/\/app\.bilibili\.com\/x\/resource\/fingerprint url script-request-header https://cdn.jsdelivr.net/gh/WillpowerJin/ql-scripts@main/bilibili/quantumultx/bilibili_cookie.js
+^https?:\/\/app\.bilibili\.com\/x\/v2\/account\/myinfo url script-request-header https://cdn.jsdelivr.net/gh/WillpowerJin/ql-scripts@main/bilibili/quantumultx/bilibili_cookie.js
+^https?:\/\/app\.bilibili\.com\/x\/v2\/account\/mine url script-request-header https://cdn.jsdelivr.net/gh/WillpowerJin/ql-scripts@main/bilibili/quantumultx/bilibili_cookie.js

@@ -1,24 +1,16 @@
 /*
- * B 站 Cookie 抓取 · Quantumult X · v1
+ * B 站 Cookie 抓取 · Quantumult X · v2
  *
- * 打开哔哩哔哩 App（MITM 已开）后自动从请求头抠 SESSDATA / bili_jct / DedeUserID，
- * 写入 $prefs，并弹通知方便贴到青龙 BILI_COOKIE。
+ * 打开哔哩哔哩 App（先从后台划掉再进首页 /「我的」）后，
+ * 从请求头抠 SESSDATA / bili_jct / DedeUserID。
+ * 即使 Cookie 不完整也会弹通知，方便判断重写有没有跑到。
  *
- * rewrite：
- *   ^https?:\/\/app\.bilibili\.com\/x\/(resource\/fingerprint|v2\/account\/myinfo)
- *   url script-request-header bilibili_cookie.js
- *
- * MITM：app.bilibili.com
- *
- * $prefs：
- *   bili_cookie          精简 Cookie（青龙直接贴）
- *   bili_cookie_full     原始 Cookie
- *   bili_access_token    URL 里的 access_key（有则写入）
- *   bili_mid
+ * $prefs：bili_cookie / bili_cookie_full / bili_access_token / bili_mid
  */
 (function () {
-  const VERSION = "v1";
-  const COOLDOWN_MS = 5 * 60 * 1000;
+  const VERSION = "v2";
+  const OK_COOL_MS = 5 * 60 * 1000;
+  const BAD_COOL_MS = 60 * 1000;
 
   const KEY_COOKIE = "bili_cookie";
   const KEY_FULL = "bili_cookie_full";
@@ -26,6 +18,7 @@
   const KEY_MID = "bili_mid";
   const KEY_TS = "bili_cookie_ts";
   const KEY_COOL = "bili_cookie_cool_until";
+  const KEY_BAD_COOL = "bili_cookie_bad_cool";
 
   const req = typeof $request !== "undefined" ? $request : {};
   const headers = req.headers || {};
@@ -63,7 +56,10 @@
         if (i < 0) return;
         const k = part.slice(0, i).trim();
         const v = part.slice(i + 1).trim();
-        if (k) out[k] = v;
+        if (k) {
+          out[k] = v;
+          out[k.toLowerCase()] = v;
+        }
       });
     return out;
   }
@@ -73,14 +69,71 @@
     return m ? decodeURIComponent(m[1]) : "";
   }
 
+  function pathOf(u) {
+    const m = String(u).match(/^https?:\/\/[^/]+(\/[^?#]*)/i);
+    return m ? m[1] : u.slice(0, 80);
+  }
+
   const raw = pickHeader(headers, "Cookie");
   const jar = parseCookie(raw);
-  const sess = jar.SESSDATA || "";
+  const sess = jar.SESSDATA || jar.sessdata || "";
   const jct = jar.bili_jct || "";
-  const mid = jar.DedeUserID || queryVal(url, "mid") || "";
+  const mid =
+    jar.DedeUserID ||
+    jar.dedeuserid ||
+    queryVal(url, "mid") ||
+    queryVal(url, "uid") ||
+    "";
   const token = queryVal(url, "access_key") || queryVal(url, "access_token");
+  const path = pathOf(url);
+  const complete = !!(sess && jct);
 
-  if (!sess || !jct) {
+  console.log("");
+  console.log("########## bili-cookie " + VERSION + " ##########");
+  console.log("path=" + path);
+  console.log(
+    "hasCookie=" +
+      !!raw +
+      " SESSDATA=" +
+      !!sess +
+      " bili_jct=" +
+      !!jct +
+      " DedeUserID=" +
+      !!mid +
+      " access_key=" +
+      !!token
+  );
+  if (raw) console.log("cookie_len=" + raw.length);
+  console.log("########## END ##########");
+  console.log("");
+
+  if (token) setPref(KEY_TOKEN, token);
+  if (mid) setPref(KEY_MID, mid);
+  if (raw) setPref(KEY_FULL, raw);
+
+  if (!complete) {
+    const now = Date.now();
+    const coolUntil = Number(pref(KEY_BAD_COOL, "0")) || 0;
+    if (now < coolUntil) {
+      $done({});
+      return;
+    }
+    setPref(KEY_BAD_COOL, now + BAD_COOL_MS);
+    $notify(
+      "📺 B站Cookie·" + VERSION,
+      "重写已命中，但 Cookie 不完整",
+      [
+        "路径: " + path,
+        "Cookie头: " + (raw ? "有(" + raw.length + "字)" : "无"),
+        "SESSDATA: " + (sess ? "有" : "无"),
+        "bili_jct: " + (jct ? "有" : "无"),
+        "DedeUserID: " + (mid || "无"),
+        "access_key: " + (token ? "有" : "无"),
+        "",
+        "请：后台划掉 B 站 → 再开到首页 → 点「我的」",
+        "仍如此：QX 日志搜 bili-cookie",
+      ].join("\n")
+    );
     $done({});
     return;
   }
@@ -89,7 +142,9 @@
     "SESSDATA=" + sess,
     "bili_jct=" + jct,
     mid ? "DedeUserID=" + mid : "",
-    jar.DedeUserID__ckMd5 ? "DedeUserID__ckMd5=" + jar.DedeUserID__ckMd5 : "",
+    jar.DedeUserID__ckMd5 || jar.dedeuserid__ckmd5
+      ? "DedeUserID__ckMd5=" + (jar.DedeUserID__ckMd5 || jar.dedeuserid__ckmd5)
+      : "",
     jar.sid ? "sid=" + jar.sid : "",
   ]
     .filter(Boolean)
@@ -102,25 +157,16 @@
   const inCool = now < coolUntil && !changed;
 
   setPref(KEY_COOKIE, slim);
-  setPref(KEY_FULL, raw);
-  setPref(KEY_MID, mid);
   setPref(KEY_TS, now);
-  if (token) setPref(KEY_TOKEN, token);
 
-  console.log("");
-  console.log("########## bili-cookie " + VERSION + " ##########");
-  console.log("mid=" + mid);
-  console.log("changed=" + changed);
   console.log("cookie=" + slim);
   if (token) console.log("access_key=" + token);
-  console.log("########## END ##########");
-  console.log("");
 
   if (inCool) {
     $done({});
     return;
   }
-  setPref(KEY_COOL, now + COOLDOWN_MS);
+  setPref(KEY_COOL, now + OK_COOL_MS);
 
   $notify(
     "📺 B站Cookie·" + VERSION,

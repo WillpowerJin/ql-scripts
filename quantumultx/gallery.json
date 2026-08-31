@@ -3,8 +3,8 @@
   "description": "WillpowerJin 青龙 / Quantumult X 脚本画廊（目前仅 B 站）",
   "task": [
     {
-      "config": "30 7 * * * https://raw.githubusercontent.com/WillpowerJin/ql-scripts/main/bilibili/quantumultx/bilibili_daily.js, tag=B站每日任务, img-url=https://raw.githubusercontent.com/Orz-3/mini/master/Color/bilibili.png, enabled=true",
-      "addons": "https://raw.githubusercontent.com/WillpowerJin/ql-scripts/main/bilibili/quantumultx/bilibili_cookie.qxrewrite,tag=B站_获取Cookie"
+      "config": "30 7 * * * https://cdn.jsdelivr.net/gh/WillpowerJin/ql-scripts@main/bilibili/quantumultx/bilibili_daily.js, tag=B站每日任务, img-url=https://raw.githubusercontent.com/Orz-3/mini/master/Color/bilibili.png, enabled=true",
+      "addons": "https://cdn.jsdelivr.net/gh/WillpowerJin/ql-scripts@main/bilibili/quantumultx/bilibili_cookie.qxrewrite,tag=B站_获取Cookie"
     }
   ]
 }
