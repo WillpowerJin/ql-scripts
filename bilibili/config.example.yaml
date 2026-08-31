@@ -16,8 +16,8 @@ accounts:
   # - name: "号2"
   #   cookie: "SESSDATA=...; bili_jct=...; DedeUserID=..."
 
-# 每日投币次数 0~5（0=不投币）
-coin_num: 5
+# 每日投币次数 0~5（0=不投币，保硬币；满额经验再改 1～5）
+coin_num: 0
 # 银瓜子兑硬币
 silver2coin: true
 # 直播中心签到（官方多已下线，默认关）

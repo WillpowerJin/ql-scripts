@@ -17,7 +17,8 @@ new Env('B站每日任务');
   或：
     BILI_COOKIE / BILI_USERNAME / BILI_PASSWORD / BILI_NAME（& 多账号）
   可选：
-    BILI_COIN_NUM=5  BILI_SILVER2COIN=1  BILI_VIP_TASKS=1
+    BILI_COIN_NUM=0  BILI_SILVER2COIN=1  BILI_VIP_TASKS=1
+    （投币默认 0=保硬币；要满额经验再设 1～5）
   通知：BARK_URL / BARK_KEY
 
 依赖：requests cryptography；本地 yaml 可选 PyYAML
@@ -210,7 +211,7 @@ class GeetestConfig:
 class AppConfig:
     accounts: list[Account] = field(default_factory=list)
     notify: NotifyConfig = field(default_factory=NotifyConfig)
-    coin_num: int = 5
+    coin_num: int = 0  # 0=不投币（保硬币）；满额经验可设 1～5
     silver2coin: bool = True
     vip_tasks: bool = True
     manga_sign: bool = True
@@ -285,7 +286,7 @@ def load_config_from_env() -> Optional[AppConfig]:
     accounts = _parse_accounts_from_env()
     if not accounts:
         return None
-    coin = int(_env("BILI_COIN_NUM") or "5")
+    coin = int(_env("BILI_COIN_NUM") or "0")
     def _flag(key: str, default: str = "1") -> bool:
         return _env(key, default) not in ("0", "false", "False")
 
@@ -359,7 +360,7 @@ def load_config_yaml(path: Path) -> AppConfig:
         seccode=str(g.get("seccode") or ""),
     )
 
-    coin = int(raw.get("coin_num") if raw.get("coin_num") is not None else 5)
+    coin = int(raw.get("coin_num") if raw.get("coin_num") is not None else 0)
     if _env("BILI_COIN_NUM"):
         coin = int(_env("BILI_COIN_NUM"))
 
@@ -1555,7 +1556,9 @@ class BiliClient:
         money = float(self.user.get("money") or 0)
         coin_success = 0
         coin_detail = ""
-        if need_coin_times <= 0:
+        if target_coins <= 0:
+            coin_detail = "已关闭（保硬币）"
+        elif need_coin_times <= 0:
             coin_detail = "今日已完成或目标为 0"
         elif money <= 5:
             coin_detail = "硬币不足（≤5 停止）"
@@ -1641,14 +1644,15 @@ class BiliClient:
         lines.append(
             mark(share_ok, "分享", share_detail if need_share else "今日已完成")
         )
-        lines.append(
-            mark(
-                coin_ok,
-                "投币",
-                f"{coins_exp // 10}/5 枚 · 经验 {coins_exp}/50"
-                + (f" · {coin_detail}" if coin_detail else ""),
+        if target_coins == 0:
+            coin_line = coin_detail or "已关闭（保硬币）"
+        else:
+            coin_line = (
+                f"{coins_exp // 10}/{target_coins} 枚 · "
+                f"经验 {coins_exp}/{target_coins * 10}"
+                + (f" · {coin_detail}" if coin_detail else "")
             )
-        )
+        lines.append(mark(coin_ok, "投币", coin_line))
 
         if extras:
             lines.append("")
@@ -1658,7 +1662,10 @@ class BiliClient:
         lines.append("")
         core_done = login_ok and watch_ok and share_ok and coin_ok
         if core_done:
-            lines.append("🏁 完成度：主站经验任务已完成 ✅")
+            if target_coins == 0:
+                lines.append("🏁 完成度：主站任务已完成 ✅（投币已关，保硬币）")
+            else:
+                lines.append("🏁 完成度：主站经验任务已完成 ✅")
         else:
             missing = []
             if not login_ok:
@@ -1784,6 +1791,11 @@ def main() -> int:
         )
     else:
         logger.info("通知: 未配置 BARK_URL/BARK_KEY（跑完不会推送）")
+    logger.info(
+        "投币: %s（0=保硬币，满额经验可设 1～5）  银瓜子兑换: %s",
+        cfg.coin_num,
+        "开" if cfg.silver2coin else "关",
+    )
     logger.info("本次共 %s 个账号", len(accounts))
     for i, a in enumerate(accounts, 1):
         mid = _mid_from_cookie(a.cookie) if a.has_cookie() else "-"

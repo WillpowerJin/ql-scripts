@@ -1,0 +1,4 @@
+# B 站 Cookie 抓取（打开哔哩哔哩 App 自动写入 $prefs.bili_cookie）
+# 配合图库任务「B站每日任务」使用
+hostname = app.bilibili.com
+^https?:\/\/app\.bilibili\.com\/x\/(resource\/fingerprint|v2\/account\/myinfo) url script-request-header https://raw.githubusercontent.com/WillpowerJin/ql-scripts/main/bilibili/quantumultx/bilibili_cookie.js

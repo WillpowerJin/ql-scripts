@@ -18,7 +18,7 @@
 | [hifiti](./hifiti/) | `checkin.py` | [HiFiNi 音乐磁场](https://www.hifiti.com/) 每日签到（Cookie 优先，失效可密码重登） | [说明](./hifiti/README.md) |
 | [xijiu](./xijiu/) | `daily.py` | 习酒君品荟：积分相关 + 文旅酒谷（种养/任务等） | [说明](./xijiu/README.md) |
 | [quark](./quark/) | `quark_checkin.py` | 夸克网盘每日签到领空间（需抓包参数） | [说明](./quark/README.md) |
-| [bilibili](./bilibili/) | `get_cookie.py` + `daily.py` | B 站：扫码获取 Cookie + 每日经验任务（无需 App 抓包） | [说明](./bilibili/README.md) |
+| [bilibili](./bilibili/) | `get_cookie.py` + `daily.py` | B 站：扫码/QX 抓 Cookie + 每日任务（**默认不投币，保硬币**）；QX 图库 [`quantumultx/gallery.json`](./quantumultx/gallery.json) | [说明](./bilibili/README.md) |
 | [fanghua](./fanghua/) | `main.py` | 芳华未来：手机号密码登录 + 签到/刷视频挂机 | [说明](./fanghua/README.md) |
 | [bafu](./bafu/) | `ads_mp.py` | 八富生活：小程序协议看广告（`YYB_GO`+备注）+ Bark | [说明](./bafu/README.md) |
 | [fun](./fun/) | `mine.py` | FUN 矿池：登录收矿/可选升级 + Bark（首次新设备短信绑定） | [说明](./fun/README.md) |
@@ -138,6 +138,8 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 .
 ├── README.md                 # 本页
 ├── requirements.txt          # 本地开发：根虚拟环境依赖汇总
+├── quantumultx/
+│   └── gallery.json          # QX 任务图库（目前仅 B 站）
 ├── .venv/                    # 本地开发用（不进 git）
 ├── hifiti/
 │   ├── checkin.py
@@ -159,9 +161,10 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 │   └── README.md
 ├── bilibili/
 │   ├── get_cookie.py         # 扫码拿 Cookie（手动）
-│   ├── daily.py              # 每日任务（定时）
+│   ├── daily.py              # 每日任务（定时，默认不投币）
 │   ├── config.example.yaml
 │   ├── requirements.txt
+│   ├── quantumultx/          # QX 抓 Cookie + 每日任务，扩展名 py 不拉
 │   └── README.md
 ├── fanghua/
 │   ├── main.py               # 芳华未来挂机入口
