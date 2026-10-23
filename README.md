@@ -18,10 +18,9 @@
 | [hifiti](./hifiti/) | `checkin.py` | [HiFiNi 音乐磁场](https://www.hifiti.com/) 每日签到（Cookie 优先，失效可密码重登） | [说明](./hifiti/README.md) |
 | [xijiu](./xijiu/) | `daily.py` | 习酒君品荟：积分相关 + 文旅酒谷（种养/任务等） | [说明](./xijiu/README.md) |
 | [quark](./quark/) | `quark_checkin.py` | 夸克网盘每日签到领空间（需抓包参数） | [说明](./quark/README.md) |
-| [bilibili](./bilibili/) | `get_cookie.py` + `daily.py` | B 站：扫码/QX 抓 Cookie + 每日任务（**默认不投币，保硬币**）；QX 图库 [`quantumultx/gallery.json`](./quantumultx/gallery.json) | [说明](./bilibili/README.md) |
+| [bilibili](./bilibili/) | `get_cookie.py` + `daily.py` | B 站：扫码拿 Cookie + 每日任务（**默认不投币，保硬币**） | [说明](./bilibili/README.md) |
 | [fanghua](./fanghua/) | `main.py` | 芳华未来：手机号密码登录 + 签到/刷视频挂机 | [说明](./fanghua/README.md) |
-| [bafu](./bafu/) | `ads_mp.py` | 八富生活：小程序协议看广告（`YYB_GO`+备注）+ Bark | [说明](./bafu/README.md) |
-| [fun](./fun/) | `mine.py` | FUN 矿池：登录收矿/可选升级 + Bark（首次新设备短信绑定） | [说明](./fun/README.md) |
+| [fun](./fun/) | `mine.py` | FUN 矿池：登录收矿/可选升级 + Bark（本地 `config.yaml` 或青龙 `FUN`；首次新设备短信绑定） | [说明](./fun/README.md) |
 | [tuiguangbao](./tuiguangbao/) | `daily.py` | 推广宝：登录看广告领奖（对齐 2.5 + Bark） | [说明](./tuiguangbao/README.md) |
 | [aliyun_dev](./aliyun_dev/) | `daily.py` | 阿里云开发者社区：签到/互动/领积分（支持账密或 Cookie） | [说明](./aliyun_dev/README.md) |
 | [kuailefeng](./kuailefeng/) | `daily.py` | 快乐蜂：手机号密码登录 + 免费/转盘抽奖（`/check` 自适应）+ Bark | [说明](./kuailefeng/README.md) |
@@ -36,8 +35,7 @@
 | `bilibili/get_cookie.py` | **手动**（Cookie 失效时） | 手机 B 站扫码 |
 | `bilibili/daily.py` | 每天定时 | 依赖扫码缓存的 Cookie |
 | `fanghua/main.py` | 每天定时 | 单号默认最长约 2h，任务超时请调大 |
-| `bafu/ads_mp.py` | 每天 `0 8 * * *` | 需 `YYB_GO=host:port@ref[#备注]`；超时建议 ≥30min |
-| `fun/mine.py` | 每天定时 | 环境变量 `FUN`；**首次新设备要短信绑定**（`FUN_CAPTCHA`），之后定时即可；收矿开、升级建议先关 |
+| `fun/mine.py` | 每天定时 | 青龙 `FUN` / 本地 `config.yaml`；**首次新设备要短信绑定**（`FUN_CAPTCHA` 或 `--captcha`），之后定时即可；收矿开、升级建议先关 |
 | `tuiguangbao/daily.py` | 每天定时 `0 9 * * *` | 环境变量 `TGB` 或 `TGB_ACCOUNTS`；超时建议 ≥15～20min |
 | `aliyun_dev/daily.py` | 每天 **两次** `0 7,13 * * *`（都跑完整版） | Cookie：`aliyunWeb_data` / `ALIYUN_ACCOUNTS`；含领待收积分；超时 ≥15min |
 | `kuailefeng/daily.py` | 每天定时 `0 9 * * *` | `KLF_ACCOUNTS` 或 `KLF=手机号#密码`；间隔默认随机 5–8s |
@@ -58,7 +56,7 @@
 类型：     公开仓库
 链接：     https://github.com/WillpowerJin/ql-scripts.git
 分支：     main
-白名单：   hifiti|xijiu|quark|bilibili|fanghua|bafu|fun|tuiguangbao|aliyun_dev|kuailefeng
+白名单：   hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng
 黑名单：   pull_access_token
 扩展名：   py
 定时规则： 30 8 * * *
@@ -73,7 +71,7 @@ pull_access_token
 **只复制白名单：**
 
 ```text
-hifiti|xijiu|quark|bilibili|fanghua|bafu|fun|tuiguangbao|aliyun_dev|kuailefeng
+hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng
 ```
 
 | 字段 | 说明 |
@@ -99,7 +97,7 @@ https://ghfast.top/https://github.com/WillpowerJin/ql-scripts.git
 在青龙容器内：
 
 ```bash
-ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilibili|fanghua|bafu|fun|tuiguangbao|aliyun_dev|kuailefeng" "pull_access_token" "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng" "pull_access_token" "" "main" "py"
 ```
 
 拉取成功后，脚本管理中应类似：
@@ -112,7 +110,6 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 …/bilibili/get_cookie.py
 …/fanghua/main.py
 …/fanghua/crypto_api.py      ← 库文件，若自动生成任务请「禁用」勿删
-…/bafu/ads_mp.py
 …/fun/mine.py
 …/tuiguangbao/daily.py       ← 推广宝任务入口
 …/aliyun_dev/daily.py        ← 阿里云开发者社区
@@ -138,8 +135,6 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 .
 ├── README.md                 # 本页
 ├── requirements.txt          # 本地开发：根虚拟环境依赖汇总
-├── quantumultx/
-│   └── gallery.json          # QX 任务图库（目前仅 B 站）
 ├── .venv/                    # 本地开发用（不进 git）
 ├── hifiti/
 │   ├── checkin.py
@@ -164,7 +159,6 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 │   ├── daily.py              # 每日任务（定时，默认不投币）
 │   ├── config.example.yaml
 │   ├── requirements.txt
-│   ├── quantumultx/          # QX 抓 Cookie + 每日任务，扩展名 py 不拉
 │   └── README.md
 ├── fanghua/
 │   ├── main.py               # 芳华未来挂机入口
@@ -172,12 +166,9 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 │   ├── config.example.yaml
 │   ├── requirements.txt
 │   └── README.md
-├── bafu/
-│   ├── ads_mp.py             # 八富小程序协议看广告（YYB_GO+备注）+ Bark
-│   ├── requirements.txt
-│   └── README.md
 ├── fun/
 │   ├── mine.py               # FUN 矿池收矿/升级 + Bark
+│   ├── config.example.yaml   # 本地复制为 config.yaml
 │   ├── requirements.txt
 │   └── README.md
 ├── tuiguangbao/
