@@ -1,7 +1,6 @@
 # 私有 / 本地工程（不进本仓库；搁置或未发布）
 yongpai/
 ksjsb/
-ninebot/
 vps8/
 yyb-go/
 
@@ -49,3 +48,7 @@ yyb-go/
 .DS_Store
 .idea/
 .vscode/
+
+# 亚朵九宫格：本地 CLIP 模型与未标注样本
+yaduo/models/
+yaduo/nine_unknown/
