@@ -24,6 +24,9 @@ yyb-go/
 **/token_cache.json
 **/session_cache.json
 **/device_cache.json
+**/.jd_device.json
+**/.jd_journal.json
+**/.sdk_storage.json
 **/fun_device_cache.json
 **/bafu_session_cache.json
 **/bfsh_session_cache.json
@@ -52,3 +55,6 @@ yyb-go/
 # 亚朵九宫格：本地 CLIP 模型与未标注样本
 yaduo/models/
 yaduo/nine_unknown/
+
+# 电信 AI 奇遇本地状态（电信凭证缓存 / 领奖记录，含敏感登录态）
+dianxin/state/
