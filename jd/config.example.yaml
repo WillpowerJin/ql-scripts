@@ -29,3 +29,17 @@ tasks:
 
 # 任务间随机等待秒数 [最小, 最大]
 gap_seconds: [5, 15]
+
+# 通知配置（可选，与 huazhu / kuailefeng 等项目兼容；对应环境变量优先）
+bark:
+  url: ""               # 完整 Bark URL，例如 https://api.day.app/your_key（对应 BARK_URL / BARK_PUSH）
+  key: ""               # 或仅填 Bark 设备 Key（对应 BARK_KEY / BARK_DEVICE_KEY）
+  server: "https://api.day.app"   # 自建服务器时修改（对应 BARK_SERVER）
+  group: "京东签到"      # 通知分组（对应 BARK_GROUP）
+  sound: ""             # 提示音，例如 minuet（对应 BARK_SOUND）
+  icon: ""              # 自定义通知图标 URL（对应 BARK_ICON）
+  level: ""             # 通知中断级别，例如 active / timeSensitive（对应 BARK_LEVEL）
+
+pushplus:
+  token: ""             # PushPlus 微信推送 Token（对应 PUSHPLUS_TOKEN）
+  topic: ""             # 群组编码（对应 PUSHPLUS_TOPIC）

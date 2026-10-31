@@ -95,7 +95,10 @@ python3 h5st.py
 ### 定时
 
 - 本机 cron：`30 8 * * * cd /path/to/scripts/jd && /usr/bin/python3 jd_sign.py >> jd.log 2>&1`
-- Bark 推送（可选，与仓库其他项目共用）：`BARK_KEY` / `BARK_SERVER` / `BARK_GROUP`
+- 通知（可选，与 huazhu / kuailefeng 等项目一致）：
+  - 青龙面板内运行优先走**青龙统一通知**（自动检测 `notify.py`）；
+  - **Bark**：`config.yaml` 的 `bark:` 段，或环境变量 `BARK_KEY` / `BARK_URL` / `BARK_SERVER` / `BARK_GROUP` / `BARK_SOUND` / `BARK_ICON` / `BARK_LEVEL`；
+  - **PushPlus**：`pushplus:` 段，或 `PUSHPLUS_TOKEN` / `PUSHPLUS_TOPIC`。
 
 ### 青龙面板
 
