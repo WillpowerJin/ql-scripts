@@ -123,14 +123,24 @@ def device_profile(pin: str, cfg: dict) -> dict:
 
 # ---------- CK 有效性检测 ----------
 def check_login(account: dict, ua: str) -> bool:
-    """me-api 用户信息只读查询：retcode=0 登录有效，1001 未登录。"""
+    """用 hs 签到查询接口做存活检测（code==0 即 Cookie 可用）。
+
+    注意：me-api.GetJDUserInfoUnion 对 plogin H5 会话会误报 1001，
+    业务接口（jdh_bm_getKitTask）才是与签到一致的真实判定。
+    """
     try:
-        resp = requests.get(
-            "https://me-api.jd.com/user_new/info/GetJDUserInfoUnion",
-            headers={"Cookie": account["cookie"], "User-Agent": ua},
+        resp = requests.post(
+            "https://api.m.jd.com/api?functionId=jdh_bm_getKitTask",
+            headers={"Cookie": account["cookie"], "User-Agent": ua,
+                     "Referer": "https://laputa.jd.com/", "Origin": "https://laputa.jd.com",
+                     "Content-Type": "application/x-www-form-urlencoded"},
+            data={"functionId": "jdh_bm_getKitTask", "appid": "jdh-middle",
+                  "body": json.dumps({"m_patch_appKey": "250520900001",
+                                      "groupCode": "openkits", "channel": "jdhapp"},
+                                     separators=(",", ":"))},
             timeout=15, allow_redirects=False)
         data = resp.json()
-        return str(data.get("retcode")) == "0"
+        return str(data.get("code")) == "0" and isinstance(data.get("result"), dict)
     except Exception:
         return True  # 检测接口本身异常时不阻塞任务
 

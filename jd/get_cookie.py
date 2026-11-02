@@ -144,7 +144,11 @@ def get_jd_cookies() -> dict:
 
 
 def wait_for_login() -> tuple:
-    """轮询直到拿到 pt_key/pt_pin，返回 (cookie_str, pt_key_expires)。"""
+    """轮询直到拿到 pt_key/pt_pin，返回 (完整 cookie 串, pt_key_expires)。
+
+    写入的是**全量 jd.com Cookie**（不只是 pt_key/pt_pin）：京喜系等接口会
+    校验 thor / pt_st / wqmnx1 等辅助会话 Cookie，只带两个值会报「13 未登录」。
+    """
     deadline = time.time() + WAIT_TIMEOUT
     print("[*] 请在弹出的 Chrome 窗口里用「手机号+短信验证码」登录京东；")
     print("[i] 登录成功后页面可能仍显示未登录，不用管——脚本以 Cookie 为准，会自动继续")
@@ -155,24 +159,30 @@ def wait_for_login() -> tuple:
             time.sleep(3)
             continue
         if "pt_key" in cookies and "pt_pin" in cookies:
-            pt_key, expires = cookies["pt_key"]
-            pin = cookies["pt_pin"][0]
-            cookie = f"pt_key={pt_key};pt_pin={pin};"
+            expires = cookies["pt_key"][1]
+            cookie = ";".join(f"{name}={value}" for name, (value, _) in cookies.items()) + ";"
             return cookie, expires
         time.sleep(3)
     sys.exit("等待登录超时（5 分钟），请重新运行本脚本")
 
 
 def verify(cookie: str) -> bool:
+    """用业务接口（hs 签到查询）验证 Cookie：me-api 对 H5 会话会误报 1001。"""
     import requests
     try:
-        resp = requests.get("https://me-api.jd.com/user_new/info/GetJDUserInfoUnion",
-                            headers={"Cookie": cookie,
-                                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                                                   "AppleWebKit/537.36 (KHTML, like Gecko) "
-                                                   "Chrome/126.0.0.0 Safari/537.36"},
-                            timeout=15, allow_redirects=False)
-        return str(resp.json().get("retcode")) == "0"
+        resp = requests.post(
+            "https://api.m.jd.com/api?functionId=jdh_bm_getKitTask",
+            headers={"Cookie": cookie,
+                     "User-Agent": "jdapp;iPhone;4.2;12.6.3;;network/wifi;model/iPhone13,2;"
+                                   "appBuild/168800;brand/apple;Mozilla/5.0 (iPhone; CPU iPhone "
+                                   "OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+                     "Referer": "https://laputa.jd.com/", "Origin": "https://laputa.jd.com",
+                     "Content-Type": "application/x-www-form-urlencoded"},
+            data={"functionId": "jdh_bm_getKitTask", "appid": "jdh-middle",
+                  "body": '{"m_patch_appKey":"250520900001","groupCode":"openkits","channel":"jdhapp"}'},
+            timeout=15, allow_redirects=False)
+        data = resp.json()
+        return str(data.get("code")) == "0" and isinstance(data.get("result"), dict)
     except Exception:
         return False
 
