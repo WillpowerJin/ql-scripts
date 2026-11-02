@@ -7,10 +7,15 @@
 流程：
   1. 启动一个带调试端口的 Chrome（独立 profile ~/.cache/jd-chrome-profile，
      不影响日常浏览器；Chrome 136+ 禁止默认 profile 开调试端口，所以必须独立）
-  2. 在该 Chrome 窗口里登录京东（手机号+验证码即可）
+  2. 在该 Chrome 窗口里用**手机号+短信验证码**登录京东
+     （2026 年起京东 PC 网页登录改发 thor，只有移动版登录页
+     plogin.m.jd.com 仍会签发脚本所需的 pt_key/pt_pin）
   3. 脚本轮询到 pt_key/pt_pin 后自动写入 jd/config.yaml，并验证登录有效性
 
-之后每次 Cookie 失效（约 30 天）重跑一次本脚本即可。
+注意：短信登录成功后页面可能仍显示"未登录"，属正常现象，
+脚本以浏览器 Cookie 仓库为准，会自动继续。
+
+之后每次 Cookie 失效重跑一次本脚本即可。
 """
 import json
 import os
@@ -33,7 +38,8 @@ CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
 CDP_PORT = 9222
 CDP_BASE = f"http://127.0.0.1:{CDP_PORT}"
 PROFILE_DIR = os.path.expanduser("~/.cache/jd-chrome-profile")
-LOGIN_URL = "https://passport.jd.com/new/login.aspx?ReturnUrl=https%3A%2F%2Fwww.jd.com%2F"
+# 2026 年起京东 PC 网页登录改发 thor；只有移动版登录页仍签发 pt_key/pt_pin
+LOGIN_URL = "https://plogin.m.jd.com/login/login?appid=300&returnurl=https%3A%2F%2Fm.jd.com%2F"
 JD_COOKIE_URLS = ["https://www.jd.com/", "https://m.jd.com/", "https://api.m.jd.com/"]
 WAIT_TIMEOUT = 300  # 最长等待登录 5 分钟
 CHROME_NAMES = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"]
@@ -91,11 +97,32 @@ def open_page(url: str) -> str:
 
 
 def get_jd_cookies() -> dict:
-    """通过 CDP 读取京东域名下的全部 Cookie（含 httpOnly），返回 {name: (value, expires)}。"""
+    """通过 CDP 读取京东 Cookie（含 httpOnly），返回 {name: (value, expires)}。
+
+    优先用浏览器级 Storage.getCookies（整个 cookie jar，不受页面分区影响）；
+    失败时退回页面级 Network.getCookies。
+    """
+    try:
+        ver = json.load(urllib.request.urlopen(f"{CDP_BASE}/json/version", timeout=5))
+        ws = websocket.create_connection(ver["webSocketDebuggerUrl"], timeout=10,
+                                         suppress_origin=True)
+        try:
+            ws.send(json.dumps({"id": 1, "method": "Storage.getCookies"}))
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                msg = json.loads(ws.recv())
+                if msg.get("id") == 1:
+                    return {c["name"]: (c["value"], c.get("expires", 0))
+                            for c in msg["result"]["cookies"]
+                            if "jd.com" in c.get("domain", "")}
+        finally:
+            ws.close()
+    except Exception:
+        pass
     pages = list_pages()
     page = next((p for p in pages if "jd.com" in (p.get("url") or "")), None)
     if not page:
-        page_id = open_page("https://www.jd.com/")
+        page_id = open_page("https://m.jd.com/")
         pages = list_pages()
         page = next(p for p in pages if p["id"] == page_id)
         time.sleep(2)
@@ -119,7 +146,8 @@ def get_jd_cookies() -> dict:
 def wait_for_login() -> tuple:
     """轮询直到拿到 pt_key/pt_pin，返回 (cookie_str, pt_key_expires)。"""
     deadline = time.time() + WAIT_TIMEOUT
-    print("[*] 请在弹出的 Chrome 窗口中登录京东（等登录成功后脚本会自动继续）…")
+    print("[*] 请在弹出的 Chrome 窗口里用「手机号+短信验证码」登录京东；")
+    print("[i] 登录成功后页面可能仍显示未登录，不用管——脚本以 Cookie 为准，会自动继续")
     while time.time() < deadline:
         try:
             cookies = get_jd_cookies()

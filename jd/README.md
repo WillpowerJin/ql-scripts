@@ -60,12 +60,16 @@ pip install -r requirements.txt        # requests / PyYAML / quickjs
 python3 get_cookie.py
 ```
 
-脚本会启动一个带调试端口的 Chrome（独立 profile，不影响日常浏览器）并打开京东登录页；
-登录成功后自动抓取 `pt_key`/`pt_pin` 写入 `config.yaml` 并验证有效性。
-原理：Chrome DevTools 协议读取 jd.com 域 Cookie（含 httpOnly）。
-> Chrome 136+ 禁止默认 profile 开调试端口，所以用的是独立 profile
-> `~/.cache/jd-chrome-profile`，需在里面登录一次。
-> **不要点“退出登录”**，退出会使 pt_key 立即失效。
+脚本会启动一个带调试端口的 Chrome（独立 profile，不影响日常浏览器）并打开
+**移动版登录页**（plogin.m.jd.com）；用手机号+短信验证码登录后，脚本自动抓取
+`pt_key`/`pt_pin` 写入 `config.yaml` 并验证有效性。
+原理：Chrome DevTools 协议读取浏览器 Cookie 仓库（含 httpOnly）。
+
+> 为什么必须走移动版登录页：2026 年起京东 PC 网页登录改发 `thor`，
+> 不再签发 `pt_key`/`pt_pin`（实测）；plogin 短信登录仍会签发（有效期约 1 年）。
+> 短信登录成功后页面可能仍显示"未登录"，属正常现象，脚本以 Cookie 仓库为准。
+> Chrome 136+ 禁止默认 profile 开调试端口，所以用独立 profile
+> `~/.cache/jd-chrome-profile`。**不要点“退出登录”**，退出会使 pt_key 立即失效。
 
 **方式 B：手动复制**
 
