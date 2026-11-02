@@ -54,12 +54,25 @@ pip install -r requirements.txt        # requests / PyYAML / quickjs
 
 ### 1. 拿 Cookie（约 30 天有效，失效要重取）
 
+**方式 A：脚本自动获取（推荐，需本机装有 Chrome）**
+
+```bash
+python3 get_cookie.py
+```
+
+脚本会启动一个带调试端口的 Chrome（独立 profile，不影响日常浏览器）并打开京东登录页；
+登录成功后自动抓取 `pt_key`/`pt_pin` 写入 `config.yaml` 并验证有效性。
+原理：Chrome DevTools 协议读取 jd.com 域 Cookie（含 httpOnly）。
+> Chrome 136+ 禁止默认 profile 开调试端口，所以用的是独立 profile
+> `~/.cache/jd-chrome-profile`，需在里面登录一次。
+> **不要点“退出登录”**，退出会使 pt_key 立即失效。
+
+**方式 B：手动复制**
+
 1. 电脑浏览器打开 [www.jd.com](https://www.jd.com) 并登录；
 2. `F12` → 应用(Application) → Cookies → `https://www.jd.com`；
-3. 复制 `pt_key` 和 `pt_pin` 两项；
+3. 复制 `pt_key` 和 `pt_pin` 两项填入 `config.yaml`；
 4. **直接关掉浏览器，不要点退出登录**（退出会让 pt_key 立即失效）。
-
-> 也可以手机开飞行模式抓 m.jd.com，但浏览器方式最省事。
 
 ### 2. 二选一填入
 

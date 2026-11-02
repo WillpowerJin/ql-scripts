@@ -25,7 +25,7 @@
 | [aliyun_dev](./aliyun_dev/) | `daily.py` | 阿里云开发者社区：签到/互动/领积分（支持账密或 Cookie） | [说明](./aliyun_dev/README.md) |
 | [kuailefeng](./kuailefeng/) | `daily.py` | 快乐蜂：手机号密码登录 + 免费/转盘抽奖（`/check` 自适应）+ Bark | [说明](./kuailefeng/README.md) |
 | [dianxin](./dianxin/) | `daily.py` | 电信 AI 奇遇：账密登录 + 创作任务攒积分换话费/抽奖 + Bark | [说明](./dianxin/README.md) |
-| [jd](./jd/) | `jd_sign.py` | 京东：京豆每日签到（hs/ys/天天领豆/互动游戏/京喜系，本地 h5st 签名） | [说明](./jd/README.md) |
+| [jd](./jd/) | `get_cookie.py` + `jd_sign.py` | 京东：Chrome 抓 Cookie + 京豆每日签到（hs/ys/天天领豆/互动游戏/京喜系，本地 h5st 签名） | [说明](./jd/README.md) |
 
 ### 入口与定时建议
 
@@ -43,6 +43,7 @@
 | `kuailefeng/daily.py` | 每天定时 `0 9 * * *` | `KLF_ACCOUNTS` 或 `KLF=手机号#密码`；间隔默认随机 5–8s |
 | `dianxin/daily.py` | 每 6 小时 `0 */6 * * *` | `DIANXIN=手机号#密码[#AndroidID][#备注]`；首次建议 `DIANXIN_MODE=observe` 试跑 |
 | `jd/jd_sign.py` | 每天定时 `30 8 * * *` | `JD_COOKIE=pt_key#pt_pin`（多账号 `&` 分隔）；首次先手动跑一次 |
+| `jd/get_cookie.py` | **手动**（Cookie 失效时） | 本机 Chrome 自动抓 pt_key/pt_pin 写入 config.yaml |
 
 ---
 
