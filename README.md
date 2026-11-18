@@ -28,6 +28,7 @@
 | [jinpinghu](./jinpinghu/) | `daily.py` | 今平湖：帐密登录 + 阅读任务 + 自动抽奖（多账号隔离，滑块支持 cv2/ddddocr/外部 OCR） | [README](./jinpinghu/README.md) |
 | [tianyi](./tianyi/) | `daily.py` | 电信营业厅：签到 + 金豆任务 + 宠物喂养 + 金豆转盘（手机号/服务密码/AndroidID） | [README](./tianyi/README.md) |
 | [bing](./bing/) | `daily.py` | 必应积分（国内版）：Cookie 登录 + 每日搜索/每日集/问答/精选任务 + 领取积分 + Bark | [README](./bing/README.md) |
+| [kugou](./kugou/) | `daily.py` | 酷狗概念版：token 多账号 + 签到/满链任务/1105 循环/翻牌/福利中心 + Bark | [README](./kugou/README.md) |
 | [huazhu](./huazhu/) | `daily.py` | 华住会：userToken 每日签到 + 积分/连签查询（Bark / PushPlus / 青龙通知） | [README](./huazhu/README.md) |
 | [ikea](./ikea/) | `daily.py` | 宜家家居：IKEA Token 每日签到（可选 `pull_token.py` 手机提取 Token） | [README](./ikea/README.md) |
 | [sfsy](./sfsy/) | `daily.py` | 顺丰速运：APP/小程序签到 + 积分任务 + 生活特权（积分页 Cookie） | [README](./sfsy/README.md) |
@@ -50,6 +51,7 @@
 | `jinpinghu/daily.py` | 每天定时 `5 9 * * *`（任务集 09:00 刷新） | `JPH=手机号#密码`（多账号 `&`）；首次先在 App 重置密码并绑定提现微信；滑块默认 cv2，也可 `JPH_OCR=remote` |
 | `tianyi/daily.py` | 每天定时 `30 8 * * *` | `chinaTelecomAccount=手机号#服务密码#AndroidID[#备注]` 或 `TIANYI_ACCOUNTS`；直播任务较久，超时建议 ≥20min |
 | `bing/daily.py` | 每天两次 `20 8,20 * * *` | `BING_COOKIE`（兼容原变量 `by`）；签到需必应 App；超时建议 ≥20min |
+| `kugou/daily.py` | 每天定时 `5 0 * * *` | `KUGOU_ACCOUNTS` 或 `KGGNB=备注#token#userid[#mid#dfid#devid]`；默认含 1105 循环，超时建议 ≥6h，快速跑用 `--once` |
 | `huazhu/daily.py` | 每天定时 `15 8 * * *` | `HZ_TOKEN=userToken`（多账号 `&`）；首次抓包获取 userToken |
 | `ikea/daily.py` | 每天定时 `20 8 * * *` | `IKEA_TOKEN=JWT`（多账号 `&`）；`pull_token.py` 仅本地用，订阅黑名单排除 |
 | `sfsy/daily.py` | 每天定时 `0 8 * * *` | `sfsyUrl` / `SFSY_COOKIE` / `SFSY_ACCOUNTS`；Cookie 失效需重新抓积分页 |
@@ -70,7 +72,7 @@
 类型：     公开仓库
 链接：     https://github.com/WillpowerJin/ql-scripts.git
 分支：     main
-白名单：   hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|huazhu|ikea|sfsy
+白名单：   hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|kugou|huazhu|ikea|sfsy
 黑名单：   pull_token
 扩展名：   py
 定时规则： 30 8 * * *
@@ -85,7 +87,7 @@ pull_token
 **只复制白名单：**
 
 ```text
-hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|huazhu|ikea|sfsy
+hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|kugou|huazhu|ikea|sfsy
 ```
 
 | 字段 | 说明 |
@@ -111,7 +113,7 @@ https://ghfast.top/https://github.com/WillpowerJin/ql-scripts.git
 在青龙容器内：
 
 ```bash
-ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|huazhu|ikea|sfsy" "pull_token" "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|kugou|huazhu|ikea|sfsy" "pull_token" "" "main" "py"
 ```
 
 拉取成功后，脚本管理中应类似：
@@ -132,6 +134,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 …/jinpinghu/daily.py        ← 今平湖阅读红包
 …/tianyi/daily.py           ← 电信营业厅签到/金豆/转盘
 …/bing/daily.py             ← 必应积分日常任务
+…/kugou/daily.py            ← 酷狗概念版金币任务
 …/huazhu/daily.py           ← 华住会签到
 …/ikea/daily.py             ← 宜家签到
 …/sfsy/daily.py             ← 顺丰速运积分任务
@@ -212,6 +215,11 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 │   └── README.md
 ├── bing/
 │   ├── daily.py              # 必应积分：搜索/每日集/问答/精选任务
+│   ├── config.example.yaml
+│   ├── requirements.txt
+│   └── README.md
+├── kugou/
+│   ├── daily.py              # 酷狗概念版：签到/满链任务/1105/翻牌/福利
 │   ├── config.example.yaml
 │   ├── requirements.txt
 │   └── README.md
