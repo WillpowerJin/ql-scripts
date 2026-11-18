@@ -26,6 +26,7 @@
 | [kuailefeng](./kuailefeng/) | `daily.py` | 快乐蜂：手机号密码登录 + 免费/转盘抽奖（`/check` 自适应）+ Bark | [说明](./kuailefeng/README.md) |
 | [dianxin](./dianxin/) | `daily.py` | 电信 AI 奇遇：账密登录 + 创作任务攒积分换话费/抽奖 + Bark | [说明](./dianxin/README.md) |
 | [jd](./jd/) | `get_cookie.py` + `jd_sign.py` | 京东：Chrome 抓 Cookie + 京豆每日签到（hs/ys/天天领豆/互动游戏/京喜系，本地 h5st 签名） | [说明](./jd/README.md) |
+| [jinpinghu](./jinpinghu/) | `daily.py` | 今平湖：帐密登录 + 阅读任务 + 自动抽奖（多账号隔离，滑块支持 cv2/ddddocr/外部 OCR） | [说明](./jinpinghu/README.md) |
 
 ### 入口与定时建议
 
@@ -44,6 +45,7 @@
 | `dianxin/daily.py` | 每 6 小时 `0 */6 * * *` | `DIANXIN=手机号#密码[#AndroidID][#备注]`；首次建议 `DIANXIN_MODE=observe` 试跑 |
 | `jd/jd_sign.py` | 每天定时 `30 8 * * *` | `JD_COOKIE=pt_key#pt_pin`（多账号 `&` 分隔）；首次先手动跑一次 |
 | `jd/get_cookie.py` | **手动**（Cookie 失效时） | 本机 Chrome 自动抓 pt_key/pt_pin 写入 config.yaml |
+| `jinpinghu/daily.py` | 每天定时 `5 9 * * *`（任务集 09:00 刷新） | `JPH=手机号#密码`（多账号 `&`）；首次先在 App 重置密码并绑定提现微信；滑块默认 cv2，也可 `JPH_OCR=remote` |
 
 ---
 
@@ -61,7 +63,7 @@
 类型：     公开仓库
 链接：     https://github.com/WillpowerJin/ql-scripts.git
 分支：     main
-白名单：   hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jd
+白名单：   hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jd|jinpinghu
 黑名单：   pull_access_token
 扩展名：   py
 定时规则： 30 8 * * *
@@ -76,7 +78,7 @@ pull_access_token
 **只复制白名单：**
 
 ```text
-hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jd
+hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jd|jinpinghu
 ```
 
 | 字段 | 说明 |
@@ -102,7 +104,7 @@ https://ghfast.top/https://github.com/WillpowerJin/ql-scripts.git
 在青龙容器内：
 
 ```bash
-ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jd" "pull_access_token" "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jd|jinpinghu" "pull_access_token" "" "main" "py"
 ```
 
 拉取成功后，脚本管理中应类似：
@@ -120,6 +122,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 …/aliyun_dev/daily.py        ← 阿里云开发者社区
 …/kuailefeng/daily.py        ← 快乐蜂抽奖
 …/dianxin/daily.py          ← 电信 AI 奇遇
+…/jinpinghu/daily.py        ← 今平湖阅读红包
 ```
 
 不应把 `pull_access_token.py` 建成任务（黑名单已排除）。
@@ -192,8 +195,13 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 │   ├── config.example.yaml
 │   ├── requirements.txt
 │   └── README.md
-└── dianxin/
-    ├── daily.py              # 电信 AI 奇遇（创作积分换话费/抽奖）
+├── dianxin/
+│   ├── daily.py              # 电信 AI 奇遇（创作积分换话费/抽奖）
+│   ├── config.example.yaml
+│   ├── requirements.txt
+│   └── README.md
+└── jinpinghu/
+    ├── daily.py              # 今平湖阅读红包（阅读任务 + 自动抽奖）
     ├── config.example.yaml
     ├── requirements.txt
     └── README.md

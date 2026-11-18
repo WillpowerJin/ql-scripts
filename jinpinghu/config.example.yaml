@@ -1,0 +1,66 @@
+# 今平湖阅读红包配置（本地调试用，青龙请直接用环境变量，见 README）
+# cp config.example.yaml config.yaml
+# 不要把填好的 config.yaml 提交到 Git
+
+accounts:
+  - name: "主号"                 # 日志 / Bark 显示名，可省略
+    phone: "13800138000"         # 今平湖登录手机号（重置密码后使用）
+    password: "your_password"    # App 里重置的登录密码
+
+  # - name: "备号"
+  #   phone: "13900139000"
+  #   password: "..."
+
+# 并发线程数：0=全并发，1=串行；默认 3
+# threads: 3
+
+# 任务完成后是否自动抽奖并提交手机号
+# do_lottery: true
+
+# 忽略微信绑定检测强制抽奖（会白扣次数，慎用）
+# force_lottery: false
+
+# 抽奖弹窗手机号，默认=登录手机号；仅单账号生效
+# lottery_phone: ""
+
+# 多账号按账号指定抽奖手机号（登录号=抽奖号）
+# lottery_phone_map:
+#   "15900000000": "13800000000"
+
+# 滑块识别：cv2（默认）/ ddddocr / remote（外部 ddddocr 服务）
+# ocr: "cv2"
+# ocr_url: "http://127.0.0.1:7777"
+# slide_retry: 6
+
+# 阅读时长：默认 0=每篇直接上报约 3 分钟
+# read_ms: 0
+# use_audio_duration: false
+# real_wait: 0
+
+# 抽奖前是否拉取活动详情（默认开）
+# ac_detail: true
+
+# 强制指定活动 id；默认按有效期自动发现
+# activity_id: ""
+# main_activity_id: ""
+
+# client_id: "10040"
+# timeout: 25
+# inter_account_delay: 2
+
+# 登录态缓存目录；青龙默认 /ql/data/jinpinghu，本地默认 ./state
+# state_dir: "./state"
+
+# 通知（可选，与 huazhu / jd 等项目共用；对应环境变量优先）
+bark:
+  url: ""               # 完整 Bark URL，例如 https://api.day.app/your_key
+  key: ""               # 或仅填 Bark 设备 Key
+  server: "https://api.day.app"
+  group: "今平湖"
+  sound: ""             # 提示音，例如 minuet
+  icon: ""              # 自定义通知图标 URL
+  level: ""             # 通知中断级别，例如 active / timeSensitive
+
+pushplus:
+  token: ""             # PushPlus 微信推送 Token
+  topic: ""             # 群组编码（可选）

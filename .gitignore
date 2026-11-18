@@ -58,3 +58,6 @@ yaduo/nine_unknown/
 
 # 电信 AI 奇遇本地状态（电信凭证缓存 / 领奖记录，含敏感登录态）
 dianxin/state/
+
+# 今平湖本地登录态缓存（access_token，含敏感登录态）
+jinpinghu/state/

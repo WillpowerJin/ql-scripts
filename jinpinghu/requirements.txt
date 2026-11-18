@@ -1,0 +1,12 @@
+requests>=2.31.0
+cryptography>=41.0.0
+
+# 默认 cv2 滑块方案
+opencv-python-headless>=4.8
+numpy>=1.24
+
+# 可选：本地 ddddocr 识别（JPH_OCR=ddddocr）
+# ddddocr
+
+# 本地 config.yaml 配置才需要
+# PyYAML>=6.0.1
