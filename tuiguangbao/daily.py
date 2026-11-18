@@ -451,6 +451,66 @@ def has_auth_cookie(session: requests.Session) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# 积分 / 余额
+# ---------------------------------------------------------------------------
+
+
+def _num(value: Any) -> Optional[float]:
+    """把接口返回的 "216.60" / 216.6 / None 统一成 float。"""
+    if value is None or value == "":
+        return None
+    try:
+        text = str(value)
+        for token in (",", "¥", "￥", "元", " "):
+            text = text.replace(token, "")
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _record_task_metrics(
+    result: dict[str, Any], task_info: dict[str, Any], *, initial: bool = False
+) -> None:
+    """记录接口里的余额/今日奖励；initial=True 时把当前余额作为基线。"""
+    balance = _num(task_info.get("balance"))
+    if balance is not None:
+        if initial or result.get("balance_before") is None:
+            result["balance_before"] = balance
+        result["balance_after"] = balance
+        before = result.get("balance_before")
+        result["balance_delta"] = (
+            round(balance - before, 2) if before is not None else 0.0
+        )
+    result["reward_money"] = _num(task_info.get("reward_money"))
+    result["unit_reward"] = _num(task_info.get("unit_reward"))
+    result["payout_pending"] = bool(task_info.get("payout_pending"))
+    result["is_vip"] = bool(task_info.get("is_vip"))
+
+
+def _fmt_money(value: Optional[float]) -> str:
+    return f"{value:.2f}" if isinstance(value, (int, float)) else "-"
+
+
+def _log_balance(account_name: str, result: dict[str, Any]) -> None:
+    """日志里输出当前积分余额；有变化时带 before → after（+delta）。"""
+    after = result.get("balance_after")
+    if not isinstance(after, (int, float)):
+        return
+    before = result.get("balance_before")
+    delta = result.get("balance_delta") or 0.0
+    if isinstance(before, (int, float)) and abs(delta) > 0:
+        logger.info(
+            "[%s] 💰 积分余额：%s → %s（%+.2f）",
+            account_name,
+            _fmt_money(before),
+            _fmt_money(after),
+            delta,
+        )
+    else:
+        logger.info("[%s] 💰 积分余额：%s", account_name, _fmt_money(after))
+
+
+# ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
 
@@ -756,6 +816,13 @@ class TuiGuangBaoClient:
             "target": 0,
             "claimed": False,
             "ads_done": 0,
+            "balance_before": None,
+            "balance_after": None,
+            "balance_delta": None,
+            "reward_money": None,
+            "unit_reward": None,
+            "payout_pending": False,
+            "is_vip": False,
             "steps": [],
         }
 
@@ -782,6 +849,8 @@ class TuiGuangBaoClient:
                 result["viewed"] = int(st.get("viewed_count") or 0)
                 result["target"] = int(st.get("target_count") or 0)
                 result["claimed"] = bool(st.get("claimed"))
+                _record_task_metrics(result, st, initial=True)
+                _log_balance(acc.name, result)
                 result["ok"] = True
                 result["message"] = (
                     f"dry-run 进度 {result['viewed']}/{result['target']}"
@@ -790,6 +859,7 @@ class TuiGuangBaoClient:
                 result["message"] = "dry-run 查进度失败"
             return result
 
+        final_status: Optional[dict[str, Any]] = None
         for loop in range(max(1, self.cfg.max_ad_loops)):
             task_info = self.get_task_status()
             if not task_info:
@@ -811,6 +881,18 @@ class TuiGuangBaoClient:
                 if not task_info:
                     result["message"] = result["message"] or "获取任务状态失败"
                     break
+
+            prev_balance = result.get("balance_after")
+            _record_task_metrics(
+                result,
+                task_info,
+                initial=(result.get("balance_before") is None),
+            )
+            if (
+                result.get("balance_after") is not None
+                and result.get("balance_after") != prev_balance
+            ):
+                _log_balance(acc.name, result)
 
             viewed = int(task_info.get("viewed_count") or 0)
             target = int(task_info.get("target_count") or 0)
@@ -840,6 +922,16 @@ class TuiGuangBaoClient:
                     result["claimed"] = True
                     result["message"] = cr.get("message") or "领奖成功"
                     result["steps"].append("claim:ok")
+                    # 领奖后余额通常变化，立刻刷新一次用于日志/通知
+                    final_status = self.get_task_status()
+                    if final_status:
+                        prev_balance = result.get("balance_after")
+                        _record_task_metrics(result, final_status)
+                        if (
+                            result.get("balance_after") is not None
+                            and result.get("balance_after") != prev_balance
+                        ):
+                            _log_balance(acc.name, result)
                 else:
                     result["message"] = cr.get("message") or "领奖失败"
                     result["steps"].append(f"claim:fail:{result['message']}")
@@ -898,6 +990,18 @@ class TuiGuangBaoClient:
             hi = max(self.cfg.inter_ad_delay_min, self.cfg.inter_ad_delay_max)
             time.sleep(random.uniform(lo, hi))
 
+        if final_status is None:
+            # 兜底：领取/失败/已完成等分支都刷新一次，确保拿到最新余额
+            final_status = self.get_task_status()
+            if final_status:
+                prev_balance = result.get("balance_after")
+                _record_task_metrics(result, final_status)
+                if (
+                    result.get("balance_after") is not None
+                    and result.get("balance_after") != prev_balance
+                ):
+                    _log_balance(acc.name, result)
+
         if not result["message"]:
             result["message"] = "执行未完成（循环结束）"
         if result["ok"]:
@@ -932,6 +1036,23 @@ def format_summary(account_results: list[tuple[str, dict[str, Any]]]) -> str:
 
         lines.append(f"{'✅' if ok else '❌'} {name}")
         lines.append(f"   📊 进度：{viewed}/{target}" + (f" · 本轮看广告 {ads}" if ads else ""))
+
+        balance = r.get("balance_after")
+        if isinstance(balance, (int, float)):
+            delta = r.get("balance_delta") or 0.0
+            suffix = f"（{delta:+.2f}）" if abs(delta) > 0 else ""
+            lines.append(f"   💰 积分余额：{balance:.2f}{suffix}")
+            extras: list[str] = []
+            reward = r.get("reward_money")
+            if isinstance(reward, (int, float)):
+                extras.append(f"今日奖励 {reward:.2f}")
+            if r.get("payout_pending"):
+                extras.append("待打款")
+            if r.get("is_vip"):
+                extras.append("VIP")
+            if extras:
+                lines.append("   " + " · ".join(extras))
+
         if claimed:
             lines.append("   💰 今日已领奖")
         elif ok:
@@ -967,13 +1088,24 @@ def format_summary(account_results: list[tuple[str, dict[str, Any]]]) -> str:
 def format_notify_title(account_results: list[tuple[str, dict[str, Any]]]) -> str:
     ok_n = sum(1 for _, r in account_results if r.get("ok"))
     n = len(account_results)
+    base = "推广宝每日广告"
     if n == 0:
-        return "推广宝每日广告"
+        return base
     if ok_n == n:
-        return f"推广宝每日广告 ✅ {ok_n}/{n}"
-    if ok_n == 0:
-        return f"推广宝每日广告 ❌ 0/{n}"
-    return f"推广宝每日广告 ⚠️ {ok_n}/{n}"
+        base = f"{base} ✅ {ok_n}/{n}"
+    elif ok_n == 0:
+        base = f"{base} ❌ 0/{n}"
+    else:
+        base = f"{base} ⚠️ {ok_n}/{n}"
+
+    total_delta = sum(
+        r.get("balance_delta") or 0
+        for _, r in account_results
+        if isinstance(r.get("balance_delta"), (int, float))
+    )
+    if abs(total_delta) > 0:
+        base += f" {total_delta:+.2f}"
+    return base
 
 
 def _build_bark_endpoint(cfg: NotifyConfig) -> Optional[str]:

@@ -185,9 +185,24 @@ python daily.py --dry-run -v         # 查进度
 | `auth:cache` | 会话缓存复用 |
 | `auth:cookie` | 配置 Cookie |
 | `📊 进度 a/b` | 已看 / 目标 |
+| `💰 积分余额：216.60` | 当前账户余额（`status.balance`） |
+| `💰 积分余额：216.60 → 219.10（+2.50）` | 领奖后余额变化 |
 | `▶ Token` | 开始模拟观看 |
 | `🎁 领奖` | claim 接口返回 |
 | `今日已领取` | 当天已 claim 过 |
+
+日志和 Bark / Server酱 / Webhook 通知的每个账号都会带：
+
+- **积分余额**（含领奖后的 `before → after（+delta）`）
+- **今日奖励**（`status.reward_money`）
+- **待打款**（`status.payout_pending`）
+- **VIP**（`status.is_vip`）
+
+通知标题也会汇总本轮余额变化，例如：
+
+```text
+推广宝每日广告 ✅ 1/1 +2.50
+```
 
 ## 依赖
 
