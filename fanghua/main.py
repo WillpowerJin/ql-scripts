@@ -4,19 +4,22 @@
 芳华未来（com.mytek.rtlive）挂机脚本
 
 支持：
-  1. 手机号 + 密码登录（自动获取 AppToken）
-  2. 直接使用已有 AppToken
-  3. 签到 / 刷视频 / 领积分 / 心跳
+  1. 直接使用已有 AppToken（推荐，长期复用）
+  2. 短信验证码登录（服务端已关闭密码登录，首次用 --sms-login 获取 Token）
+  3. 手机号 + 密码登录（保留兼容；当前服务端返回「暂不支持密码登录」）
+  4. 签到 / 刷视频 / 领积分 / 心跳
 
 cron: 0 8 * * *
 new Env('芳华未来挂机');
 
 青龙环境变量：
   FANGHUA_ACCOUNTS  JSON 数组，推荐
-    [{"name":"主号","phone":"138...","password":"..."}]
-    或 [{"name":"主号","token":"AppToken..."}]
+    [{"name":"主号","token":"AppToken..."}]
+    或 [{"name":"主号","phone":"138...","sms_code":"123456"}]   # 验证码一次性
+    或 [{"name":"主号","phone":"138...","password":"..."}]       # 服务端已关闭
   或按索引对齐：
-    FANGHUA_PHONE / FANGHUA_PASSWORD / FANGHUA_TOKEN / FANGHUA_NAME / FANGHUA_JPUSH
+    FANGHUA_PHONE / FANGHUA_PASSWORD / FANGHUA_TOKEN / FANGHUA_SMS_CODE
+    / FANGHUA_NAME / FANGHUA_JPUSH
   本地也可使用 config.yaml（见 config.example.yaml）
 
 通知（可选）：BARK_URL 或 BARK_KEY
@@ -105,6 +108,7 @@ class Account:
     phone: str = ""
     password: str = ""
     token: str = ""
+    sms_code: str = ""
     jpush_id: str = ""
     device_id: str = ""
 
@@ -257,6 +261,7 @@ def load_accounts_from_env() -> list[Account]:
                     phone=str(item.get("phone") or ""),
                     password=str(item.get("password") or ""),
                     token=str(item.get("token") or item.get("app_token") or ""),
+                    sms_code=str(item.get("sms_code") or item.get("code") or ""),
                     jpush_id=str(item.get("jpush_id") or item.get("jpushId") or ""),
                     device_id=str(item.get("device_id") or item.get("deviceId") or ""),
                 )
@@ -266,6 +271,7 @@ def load_accounts_from_env() -> list[Account]:
     phones = _split_multi(os.environ.get("FANGHUA_PHONE", ""))
     passwords = _split_multi(os.environ.get("FANGHUA_PASSWORD", ""))
     tokens = _split_multi(os.environ.get("FANGHUA_TOKEN", ""))
+    codes = _split_multi(os.environ.get("FANGHUA_SMS_CODE", ""))
     names = _split_multi(os.environ.get("FANGHUA_NAME", ""))
     jpushes = _split_multi(os.environ.get("FANGHUA_JPUSH", ""))
     n = max(len(phones), len(tokens), 0)
@@ -276,10 +282,18 @@ def load_accounts_from_env() -> list[Account]:
         phone = phones[i] if i < len(phones) else ""
         token = tokens[i] if i < len(tokens) else ""
         password = passwords[i] if i < len(passwords) else ""
+        sms_code = codes[i] if i < len(codes) else ""
         name = names[i] if i < len(names) else (phone or f"账号{i+1}")
         jpush = jpushes[i] if i < len(jpushes) else ""
         accounts.append(
-            Account(name=name, phone=phone, password=password, token=token, jpush_id=jpush)
+            Account(
+                name=name,
+                phone=phone,
+                password=password,
+                token=token,
+                sms_code=sms_code,
+                jpush_id=jpush,
+            )
         )
     return accounts
 
@@ -302,6 +316,7 @@ def load_config_yaml(path: Path) -> RuntimeConfig:
                 phone=str(item.get("phone") or ""),
                 password=str(item.get("password") or ""),
                 token=str(item.get("token") or item.get("app_token") or ""),
+                sms_code=str(item.get("sms_code") or item.get("code") or ""),
                 jpush_id=str(item.get("jpush_id") or item.get("jpushId") or ""),
                 device_id=str(item.get("device_id") or item.get("deviceId") or ""),
             )
@@ -393,16 +408,78 @@ def send_bark(cfg: RuntimeConfig, title: str, content: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _login_with_token(
+    account: Account, client: FanghuaClient, cache: dict[str, Any], token: str
+) -> bool:
+    client.set_token(token)
+    info = client.get_user_info()
+    if info.get("code") == 200 and info.get("user"):
+        update_account_cache(cache, account, token=token)
+        logger.info(
+            "[%s] Token 有效 userId=%s", account.name, info["user"].get("userId")
+        )
+        return True
+    logger.info(
+        "[%s] Token 已失效: %s", account.name, info.get("msg") or info.get("code")
+    )
+    # 清掉失效 Token，避免登录请求带着旧 AppToken 被服务端直接拒绝
+    client.set_token("")
+    return False
+
+
+def _login_with_sms(
+    account: Account, client: FanghuaClient, cache: dict[str, Any]
+) -> bool:
+    if not account.phone.strip():
+        logger.error("[%s] 短信登录需要 phone", account.name)
+        return False
+    if not account.sms_code.strip():
+        return False
+    logger.info("[%s] 使用短信验证码登录…", account.name)
+    res = client.login_by_phone(
+        account.phone, account.sms_code.strip(), jpush_id=account.jpush_id
+    )
+    if res.get("code") == 200 and res.get("token"):
+        update_account_cache(cache, account, token=res["token"])
+        user = res.get("user") or {}
+        logger.info(
+            "[%s] 验证码登录成功 userId=%s integral=%s",
+            account.name,
+            user.get("userId"),
+            user.get("integral"),
+        )
+        return True
+    if res.get("code") == 200 and isinstance(res.get("users"), list):
+        logger.error(
+            "[%s] 返回多用户列表，请先在 App 内选定账号，再复制 Token 到配置: %s",
+            account.name,
+            res.get("msg"),
+        )
+        return False
+    logger.error("[%s] 验证码登录失败: %s", account.name, res.get("msg") or res)
+    return False
+
+
 def ensure_login(account: Account, client: FanghuaClient, cache: dict[str, Any]) -> bool:
-    """优先密码登录；否则用 token / 缓存 token。"""
+    """登录顺序：缓存 Token → 手机号密码 → 短信验证码。
+
+    服务端目前已关闭密码登录（code=500「暂不支持密码登录」），
+    常规运行应依赖 Token；首次可用 --sms-login 或 FANGHUA_SMS_CODE 获取。
+    """
     cache_key = _account_cache_key(account)
     entry = cache.get(cache_key) if isinstance(cache.get(cache_key), dict) else {}
     if not isinstance(entry, dict):
         entry = {}
 
+    # 1) 先用已有 Token，避免每次重登把 App 端 Token 顶掉
+    token = (account.token or "").strip() or str(entry.get("token") or "").strip()
+    if token and _login_with_token(account, client, cache, token):
+        return True
+
+    # 2) 密码登录（服务端若重新开放则可用）
     if account.has_password():
         logger.info(
-            "[%s] 使用手机号密码登录… deviceId=%s… jpush=%s…",
+            "[%s] 尝试手机号密码登录… deviceId=%s… jpush=%s…",
             account.name,
             (account.device_id or "")[:8],
             (account.jpush_id or "")[:8],
@@ -412,13 +489,12 @@ def ensure_login(account: Account, client: FanghuaClient, cache: dict[str, Any])
             update_account_cache(cache, account, token=res["token"])
             user = res.get("user") or {}
             logger.info(
-                "[%s] 登录成功 userId=%s integral=%s",
+                "[%s] 密码登录成功 userId=%s integral=%s",
                 account.name,
                 user.get("userId"),
                 user.get("integral"),
             )
             return True
-        # 多账号绑定场景
         if res.get("code") == 200 and isinstance(res.get("users"), list):
             logger.error(
                 "[%s] 返回多用户列表，请在 App 内选定账号后再用 token 方式运行: %s",
@@ -426,20 +502,24 @@ def ensure_login(account: Account, client: FanghuaClient, cache: dict[str, Any])
                 res.get("msg"),
             )
             return False
-        logger.error("[%s] 登录失败: %s", account.name, res.get("msg") or res)
-        return False
+        msg = str(res.get("msg") or "")
+        if "密码登录" in msg and "不支持" in msg:
+            logger.warning("[%s] 服务端已关闭密码登录，改走短信验证码", account.name)
+        else:
+            logger.error("[%s] 密码登录失败: %s", account.name, msg or res)
+    elif not account.sms_code:
+        logger.info("[%s] 未配置 password，尝试使用已有 Token", account.name)
 
-    token = account.token or str(entry.get("token") or "")
-    if not token:
-        logger.error("[%s] 未配置 password 或 token", account.name)
-        return False
-    client.set_token(token)
-    info = client.get_user_info()
-    if info.get("code") == 200 and info.get("user"):
-        update_account_cache(cache, account, token=token)
-        logger.info("[%s] Token 有效 userId=%s", account.name, info["user"].get("userId"))
+    # 3) 短信验证码登录（需要一次性 sms_code）
+    if _login_with_sms(account, client, cache):
         return True
-    logger.error("[%s] Token 无效: %s", account.name, info.get("msg") or info)
+
+    logger.error(
+        "[%s] 登录失败：服务端不支持密码登录，当前也没有有效 Token。"
+        "请先在本机运行 `python3 main.py --sms-login`（会发短信并提示输入验证码），"
+        "成功后会写入 Token 缓存，之后定时任务无需再登录。",
+        account.name,
+    )
     return False
 
 
@@ -606,12 +686,105 @@ def setup_logging(verbose: bool = False) -> None:
     )
 
 
+def _mask_phone(phone: str) -> str:
+    phone = phone.strip()
+    if len(phone) >= 7:
+        return f"{phone[:3]}****{phone[-4:]}"
+    return phone or "(未配置手机号)"
+
+
+def _client_for(
+    account: Account, cfg: RuntimeConfig, cache: dict[str, Any]
+) -> FanghuaClient:
+    device_id, jpush_id = resolve_account_ids(account, cache)
+    account.jpush_id = jpush_id
+    save_token_cache(cache)
+    return FanghuaClient(device_id=device_id, timeout=cfg.timeout)
+
+
+def send_login_codes(cfg: RuntimeConfig, cache: dict[str, Any]) -> int:
+    """只发送短信验证码，不登录；配合 --sms-code 使用。"""
+    ok = 0
+    for acc in cfg.accounts:
+        if not acc.phone.strip():
+            logger.error("[%s] 未配置手机号，无法发送验证码", acc.name)
+            continue
+        client = _client_for(acc, cfg, cache)
+        res = client.send_code(acc.phone)
+        if res.get("code") == 200:
+            logger.info("[%s] 验证码已发送至 %s", acc.name, _mask_phone(acc.phone))
+            ok += 1
+        else:
+            logger.error("[%s] 发送验证码失败: %s", acc.name, res.get("msg") or res)
+    return 0 if ok == len(cfg.accounts) else 2
+
+
+def sms_login_interactive(cfg: RuntimeConfig, cache: dict[str, Any]) -> int:
+    """发验证码 → 终端输入 6 位码 → 登录并写 Token 缓存。"""
+    if not sys.stdin.isatty():
+        logger.error(
+            "当前不是交互终端，无法输入验证码。"
+            "请在本机终端运行，或改用 --send-code + --sms-code。"
+        )
+        return 2
+    ok = 0
+    for acc in cfg.accounts:
+        if not acc.phone.strip():
+            logger.error("[%s] 未配置手机号，无法短信登录", acc.name)
+            continue
+        client = _client_for(acc, cfg, cache)
+        res = client.send_code(acc.phone)
+        if res.get("code") != 200:
+            logger.error("[%s] 发送验证码失败: %s", acc.name, res.get("msg") or res)
+            continue
+        logger.info("[%s] 验证码已发送至 %s", acc.name, _mask_phone(acc.phone))
+        try:
+            code = input(f"[{acc.name}] 请输入收到的验证码（直接回车跳过）: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            logger.error("[%s] 未输入验证码，跳过", acc.name)
+            continue
+        if not code:
+            logger.warning("[%s] 未输入验证码，跳过", acc.name)
+            continue
+        res = client.login_by_phone(acc.phone, code, jpush_id=acc.jpush_id)
+        if res.get("code") == 200 and res.get("token"):
+            update_account_cache(cache, acc, token=res["token"])
+            logger.info(
+                "[%s] 验证码登录成功，Token 已写入 %s",
+                acc.name,
+                resolve_token_cache_path(),
+            )
+            ok += 1
+        elif res.get("code") == 200 and isinstance(res.get("users"), list):
+            logger.error(
+                "[%s] 返回多用户列表（App 内需先选择账号）: %s",
+                acc.name,
+                res.get("msg"),
+            )
+        else:
+            logger.error("[%s] 验证码登录失败: %s", acc.name, res.get("msg") or res)
+    return 0 if ok == len(cfg.accounts) else 2
+
+
 def main(argv: Optional[list[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="芳华未来挂机（手机号密码登录）")
+    parser = argparse.ArgumentParser(description="芳华未来挂机（Token / 短信验证码登录）")
     parser.add_argument("-c", "--config", default=str(SCRIPT_DIR / "config.yaml"), help="配置文件路径")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("--login-only", action="store_true", help="仅登录校验，不挂机")
     parser.add_argument("--max-hours", type=float, default=None, help="覆盖单账号最长运行小时")
+    parser.add_argument(
+        "--send-code", action="store_true", help="只发送短信验证码，不登录（配合 --sms-code）"
+    )
+    parser.add_argument(
+        "--sms-login",
+        action="store_true",
+        help="发送验证码并在终端输入，登录成功后写入 Token 缓存",
+    )
+    parser.add_argument(
+        "--sms-code",
+        default="",
+        help="短信验证码；多账号用 & 或 , 分隔（按账号顺序对应）",
+    )
     args = parser.parse_args(argv)
     setup_logging(args.verbose)
 
@@ -633,6 +806,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         cfg = y
     if args.max_hours is not None:
         cfg.max_run_hours = args.max_hours
+    if args.sms_code:
+        codes = [x.strip() for x in args.sms_code.replace("&", ",").split(",") if x.strip()]
+        for i, acc in enumerate(cfg.accounts):
+            if i < len(codes):
+                acc.sms_code = codes[i]
 
     if not cfg.accounts:
         logger.error(
@@ -642,6 +820,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     cache = load_token_cache()
+    if args.send_code:
+        return send_login_codes(cfg, cache)
+    if args.sms_login:
+        return sms_login_interactive(cfg, cache)
     logger.info("Token 缓存: %s", resolve_token_cache_path())
     if cfg.bark_url or cfg.bark_key:
         logger.info("通知: Bark 已配置")

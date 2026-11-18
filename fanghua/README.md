@@ -3,7 +3,7 @@
 对应 App：**芳华未来**（包名 `com.mytek.rtlive`）  
 API：`https://api.cdwjyyh.com`
 
-支持 **手机号 + 密码登录**，自动获取 `AppToken` 后：签到、刷视频、领积分、心跳。
+登录方式：**Token 复用 / 短信验证码登录**。服务端已关闭「手机号 + 密码登录」（返回 `暂不支持密码登录111`），密码字段仅为兼容保留。拿到 `AppToken` 后：签到、刷视频、领积分、心跳。
 
 > 仅供学习自用。勿将密码 / Token 提交到 Git。
 
@@ -11,13 +11,39 @@ API：`https://api.cdwjyyh.com`
 
 | 功能 | 说明 |
 |------|------|
-| 密码登录 | `POST /app/app/login`，`loginType=1` |
+| Token 登录 | 直接复用 `token` / 缓存，不重复登录，避免顶掉 App 端会话 |
+| 短信登录 | `POST /app/app/sendCode` → `POST /app/app/loginByPhone`（`loginType=2`） |
+| 密码登录 | `POST /app/app/login`（`loginType=1`）——**服务端目前已关闭** |
 | Token 缓存 | 登录后写入缓存，下次复用（青龙：`/ql/data/fanghua_token_cache.json`） |
 | 多账号设备隔离 | 每号独立稳定的 `device_id` / `jpush_id` |
 | 每日签到 | `/app/integral/sign` |
 | 刷视频领币 | 列表 → PLAY / PLAY_3S / COMPLETE + `addIntegral` |
 | 心跳 | `/app/portrait/heartbeat` |
 | Bark | 跑完推送摘要 |
+
+## 首次登录（重要）
+
+服务端已关闭密码登录（任何账号都返回 `暂不支持密码登录111`），首次需要拿一个有效期较长的 `AppToken`。
+
+**方式 A：本机交互短信登录（推荐）**
+
+```bash
+python3 -u main.py --sms-login
+```
+
+脚本会向 `config.yaml` 里的手机号发送验证码，终端输入 6 位码即可；成功后日志显示「验证码登录成功」，Token 写入 `token_cache.json`。
+
+**方式 B：分两步（适合脚本/远程）**
+
+```bash
+python3 -u main.py --send-code          # 只发验证码
+python3 -u main.py --login-only --sms-code 123456   # 输入收到的码并登录
+```
+
+之后正常跑定时任务即可，脚本优先用缓存 Token，不会每次重登。  
+若 Token 失效（`AppToken失效，请重新登录`），或你在 App 内重新登录把它顶掉，重跑一次 `--sms-login` 即可。
+
+**青龙面板**里收不到短信：在本地登录成功后，把 `token_cache.json` 传到 `/ql/data/fanghua_token_cache.json`，或直接把 Token 填进环境变量 `FANGHUA_TOKEN` / `FANGHUA_ACCOUNTS` 的 `token` 字段。
 
 ## 青龙面板
 
@@ -64,27 +90,31 @@ pycryptodome
 
 ### 环境变量（账号）
 
-推荐 JSON：
+**推荐 JSON（Token）**：
 
 ```text
-FANGHUA_ACCOUNTS=[{"name":"主号","phone":"13800138000","password":"你的密码"}]
+FANGHUA_ACCOUNTS=[{"name":"主号","token":"AppToken..."}]
 ```
 
 多账号：
 
 ```text
-FANGHUA_ACCOUNTS=[{"name":"主号","phone":"138...","password":"..."},{"name":"号2","phone":"139...","password":"..."}]
+FANGHUA_ACCOUNTS=[{"name":"主号","token":"..."},{"name":"号2","token":"..."}]
 ```
 
-或对齐写法：
+短信验证码（一次性，几分钟内有效；多账号用 `&` 对齐）：
 
 ```text
+FANGHUA_ACCOUNTS=[{"name":"主号","phone":"138...","sms_code":"123456"}]
+# 或
 FANGHUA_PHONE=138...&139...
-FANGHUA_PASSWORD=pass1&pass2
+FANGHUA_SMS_CODE=123456&654321
 FANGHUA_NAME=主号&号2
 ```
 
-也可用 Token：`FANGHUA_TOKEN=...`（或写在 JSON 的 `token` 字段）。
+也可用对齐 Token：`FANGHUA_TOKEN=tok1&tok2`。
+
+> 密码登录已关闭：`FANGHUA_PASSWORD` / JSON 的 `password` 保留兼容，目前请勿依赖。
 
 可选：
 
@@ -116,6 +146,13 @@ BARK_URL=https://api.day.app/你的Key/
 
 ```bash
 python3 -u main.py --login-only
+```
+
+首次或 Token 失效时：
+
+```bash
+python3 -u main.py --sms-login          # 交互式：发码 + 输入验证码
+python3 -u main.py --send-code          # 只发码，配合 --sms-code 使用
 ```
 
 限制时长（调试）：

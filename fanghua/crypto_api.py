@@ -257,6 +257,30 @@ class FanghuaClient:
             self.set_token(res["token"])
         return res
 
+    def send_code(self, phone: str) -> dict[str, Any]:
+        """发送短信验证码（登录用）。"""
+        return self.post("/app/app/sendCode", {"phone": phone})
+
+    def login_by_phone(
+        self,
+        phone: str,
+        code: str,
+        jpush_id: str = "",
+        source: str = "app",
+    ) -> dict[str, Any]:
+        """手机号 + 短信验证码登录（服务端已关闭密码登录，改用此接口）。"""
+        payload = {
+            "phone": phone,
+            "code": code,
+            "jpushId": jpush_id or self.device_id,
+            "loginType": 2,
+            "source": source,
+        }
+        res = self.post("/app/app/loginByPhone", payload)
+        if res.get("code") == 200 and res.get("token"):
+            self.set_token(res["token"])
+        return res
+
     def get_user_info(self) -> dict[str, Any]:
         return self.get("/app/user/getUserInfo", {})
 

@@ -19,7 +19,7 @@
 | [xijiu](./xijiu/) | `daily.py` | 习酒君品荟：积分相关 + 文旅酒谷（种养/任务等） | [说明](./xijiu/README.md) |
 | [quark](./quark/) | `quark_checkin.py` | 夸克网盘每日签到领空间（需抓包参数） | [说明](./quark/README.md) |
 | [bilibili](./bilibili/) | `get_cookie.py` + `daily.py` | B 站：扫码拿 Cookie + 每日任务（**默认不投币，保硬币**） | [说明](./bilibili/README.md) |
-| [fanghua](./fanghua/) | `main.py` | 芳华未来：手机号密码登录 + 签到/刷视频挂机 | [说明](./fanghua/README.md) |
+| [fanghua](./fanghua/) | `main.py` | 芳华未来：Token / 短信验证码登录 + 签到/刷视频挂机（密码登录已关闭） | [说明](./fanghua/README.md) |
 | [fun](./fun/) | `mine.py` | FUN 矿池：登录收矿/可选升级 + Bark（本地 `config.yaml` 或青龙 `FUN`；首次新设备短信绑定） | [说明](./fun/README.md) |
 | [tuiguangbao](./tuiguangbao/) | `daily.py` | 推广宝：登录看广告领奖（对齐 2.5 + Bark） | [说明](./tuiguangbao/README.md) |
 | [aliyun_dev](./aliyun_dev/) | `daily.py` | 阿里云开发者社区：签到/互动/领积分（支持账密或 Cookie） | [说明](./aliyun_dev/README.md) |
@@ -41,7 +41,7 @@
 | `quark/quark_checkin.py` | 每天定时 | `COOKIE_QUARK` 等 |
 | `bilibili/get_cookie.py` | **手动**（Cookie 失效时） | 手机 B 站扫码 |
 | `bilibili/daily.py` | 每天定时 | 依赖扫码缓存的 Cookie |
-| `fanghua/main.py` | 每天定时 | 单号默认最长约 2h，任务超时请调大 |
+| `fanghua/main.py` | 每天定时 | 首次本地 `--sms-login` 拿 AppToken（或填 `FANGHUA_TOKEN`）；单号默认最长约 2h，任务超时请调大 |
 | `fun/mine.py` | 每天定时 | 青龙 `FUN` / 本地 `config.yaml`；**首次新设备要短信绑定**（`FUN_CAPTCHA` 或 `--captcha`），之后定时即可；收矿开、升级建议先关 |
 | `tuiguangbao/daily.py` | 每天定时 `0 9 * * *` | 环境变量 `TGB` 或 `TGB_ACCOUNTS`；超时建议 ≥15～20min |
 | `aliyun_dev/daily.py` | 每天 **两次** `0 7,13 * * *`（都跑完整版） | Cookie：`aliyunWeb_data` / `ALIYUN_ACCOUNTS`；含领待收积分；超时 ≥15min |
