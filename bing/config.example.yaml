@@ -1,0 +1,36 @@
+# 必应积分助手配置示例
+# 复制为 config.yaml 后填写实际 Cookie（config.yaml 已在 .gitignore，不要提交）
+
+accounts:
+  - name: "主号"
+    # cn.bing.com 登录后的完整 Cookie（必须包含 _U）
+    # 推荐：F12 → Network → 刷新 → cn.bing.com 请求 → Headers → Request Headers → Cookie 整行复制
+    cookie: "MUID=xxxx; _U=xxxx; SRCHD=xxxx; SRCHUID=xxxx; SRCHUSR=xxxx; _EDGE_S=xxxx; ..."
+
+  # - name: "小号"
+  #   cookie: "MUID=yyyy; _U=yyyy; ..."
+
+# 执行参数
+search_times: 15          # 每日搜索目标次数（1–20，默认 15）
+delay: "3-8"              # 搜索/任务间隔秒（"最小-最大"）
+wait_seconds: 60          # 最终查积分前等待秒数（0 表示不等待）
+offers: true              # 是否做每日精选任务
+checkin: true             # 是否尝试每日签到（网页端通常无效，需必应 App）
+claim: true               # 是否领取「待领取」积分
+timeout: 20               # 单次请求超时秒数
+inter_account_delay: 5    # 多账号之间的间隔秒数
+
+# 通知配置（可选）
+# 与仓库中其它脚本（kuailefeng / huazhu 等）兼容
+bark:
+  url: ""                 # 完整 Bark URL，例如 https://api.day.app/your_key
+  key: ""                 # 或仅填 Bark 设备 Key
+  server: "https://api.day.app"
+  group: "必应积分"
+  sound: ""               # 提示音，例如 minuet
+  icon: ""                # 自定义通知图标 URL
+  level: ""               # 通知中断级别，例如 active / timeSensitive
+
+pushplus:
+  token: ""               # PushPlus 微信推送 Token
+  topic: ""               # 群组编码（可选）
