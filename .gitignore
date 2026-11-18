@@ -24,9 +24,6 @@ yyb-go/
 **/token_cache.json
 **/session_cache.json
 **/device_cache.json
-**/.jd_device.json
-**/.jd_journal.json
-**/.sdk_storage.json
 **/fun_device_cache.json
 **/bafu_session_cache.json
 **/bfsh_session_cache.json
