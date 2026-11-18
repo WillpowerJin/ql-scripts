@@ -13,25 +13,25 @@
 
 仅列出 **GitHub 上已推送** 的目录。本地未提交的工程不会出现在下表，避免死链。
 
-| 目录 | 入口脚本 | 说明 | 文档 |
-|------|----------|------|------|
-| [hifiti](./hifiti/) | `checkin.py` | [HiFiNi 音乐磁场](https://www.hifiti.com/) 每日签到（Cookie 优先，失效可密码重登） | [说明](./hifiti/README.md) |
-| [xijiu](./xijiu/) | `daily.py` | 习酒君品荟：酒谷签到/种养/任务（原积分签到已移除） | [说明](./xijiu/README.md) |
-| [quark](./quark/) | `quark_checkin.py` | 夸克网盘每日签到领空间（需抓包参数） | [说明](./quark/README.md) |
-| [bilibili](./bilibili/) | `get_cookie.py` + `daily.py` | B 站：扫码拿 Cookie + 每日任务（**默认不投币，保硬币**） | [说明](./bilibili/README.md) |
-| [fanghua](./fanghua/) | `main.py` | 芳华未来：Token / 短信验证码登录 + 签到/刷视频挂机（密码登录已关闭） | [说明](./fanghua/README.md) |
-| [fun](./fun/) | `mine.py` | FUN 矿池：登录收矿/可选升级 + Bark（本地 `config.yaml` 或青龙 `FUN`；首次新设备短信绑定） | [说明](./fun/README.md) |
-| [tuiguangbao](./tuiguangbao/) | `daily.py` | 推广宝：登录看广告领奖（对齐 2.5 + Bark） | [说明](./tuiguangbao/README.md) |
-| [aliyun_dev](./aliyun_dev/) | `daily.py` | 阿里云开发者社区：签到/互动/领积分（支持账密或 Cookie） | [说明](./aliyun_dev/README.md) |
-| [kuailefeng](./kuailefeng/) | `daily.py` | 快乐蜂：手机号密码登录 + 免费/转盘抽奖（`/check` 自适应）+ Bark | [说明](./kuailefeng/README.md) |
-| [dianxin](./dianxin/) | `daily.py` | 电信 AI 奇遇：账密登录 + 创作任务攒积分换话费/抽奖 + Bark | [说明](./dianxin/README.md) |
-| [jinpinghu](./jinpinghu/) | `daily.py` | 今平湖：帐密登录 + 阅读任务 + 自动抽奖（多账号隔离，滑块支持 cv2/ddddocr/外部 OCR） | [说明](./jinpinghu/README.md) |
-| [tianyi](./tianyi/) | `daily.py` | 电信营业厅：签到 + 金豆任务 + 宠物喂养 + 金豆转盘（手机号/服务密码/AndroidID） | [说明](./tianyi/README.md) |
-| [bing](./bing/) | `daily.py` | 必应积分（国内版）：Cookie 登录 + 每日搜索/每日集/问答/精选任务 + 领取积分 + Bark | [说明](./bing/README.md) |
-| [huazhu](./huazhu/) | `daily.py` | 华住会：userToken 每日签到 + 积分/连签查询（Bark / PushPlus / 青龙通知） | [说明](./huazhu/README.md) |
-| [ikea](./ikea/) | `daily.py` | 宜家家居：IKEA Token 每日签到（可选 `pull_token.py` 手机提取 Token） | [说明](./ikea/README.md) |
-| [sfsy](./sfsy/) | `daily.py` | 顺丰速运：APP/小程序签到 + 积分任务 + 生活特权（积分页 Cookie） | [说明](./sfsy/README.md) |
-| [shangjinlianmeng](./shangjinlianmeng/) | `赏金联盟自动看广.py` | 赏金联盟：每账号每日 3 次广告上报（`SJLM=账号#密码`） | [说明](./shangjinlianmeng/README.md) |
+| 目录 | 入口脚本 | 说明 | README |
+|------|----------|------|--------|
+| [hifiti](./hifiti/) | `checkin.py` | [HiFiNi 音乐磁场](https://www.hifiti.com/) 每日签到（Cookie 优先，失效可密码重登） | [README](./hifiti/README.md) |
+| [xijiu](./xijiu/) | `daily.py` | 习酒君品荟：酒谷签到/种养/任务（原积分签到已移除） | [README](./xijiu/README.md) |
+| [quark](./quark/) | `quark_checkin.py` | 夸克网盘每日签到领空间（需抓包参数） | [README](./quark/README.md) |
+| [bilibili](./bilibili/) | `get_cookie.py` + `daily.py` | B 站：扫码拿 Cookie + 每日任务（**默认不投币，保硬币**） | [README](./bilibili/README.md) |
+| [fanghua](./fanghua/) | `main.py` | 芳华未来：Token / 短信验证码登录 + 签到/刷视频挂机（密码登录已关闭） | [README](./fanghua/README.md) |
+| [fun](./fun/) | `mine.py` | FUN 矿池：登录收矿/可选升级 + Bark（本地 `config.yaml` 或青龙 `FUN`；首次新设备短信绑定） | [README](./fun/README.md) |
+| [tuiguangbao](./tuiguangbao/) | `daily.py` | 推广宝：登录看广告领奖（对齐 2.5 + Bark） | [README](./tuiguangbao/README.md) |
+| [aliyun_dev](./aliyun_dev/) | `daily.py` | 阿里云开发者社区：签到/互动/领积分（支持账密或 Cookie） | [README](./aliyun_dev/README.md) |
+| [kuailefeng](./kuailefeng/) | `daily.py` | 快乐蜂：手机号密码登录 + 免费/转盘抽奖（`/check` 自适应）+ Bark | [README](./kuailefeng/README.md) |
+| [dianxin](./dianxin/) | `daily.py` | 电信 AI 奇遇：账密登录 + 创作任务攒积分换话费/抽奖 + Bark | [README](./dianxin/README.md) |
+| [jinpinghu](./jinpinghu/) | `daily.py` | 今平湖：帐密登录 + 阅读任务 + 自动抽奖（多账号隔离，滑块支持 cv2/ddddocr/外部 OCR） | [README](./jinpinghu/README.md) |
+| [tianyi](./tianyi/) | `daily.py` | 电信营业厅：签到 + 金豆任务 + 宠物喂养 + 金豆转盘（手机号/服务密码/AndroidID） | [README](./tianyi/README.md) |
+| [bing](./bing/) | `daily.py` | 必应积分（国内版）：Cookie 登录 + 每日搜索/每日集/问答/精选任务 + 领取积分 + Bark | [README](./bing/README.md) |
+| [huazhu](./huazhu/) | `daily.py` | 华住会：userToken 每日签到 + 积分/连签查询（Bark / PushPlus / 青龙通知） | [README](./huazhu/README.md) |
+| [ikea](./ikea/) | `daily.py` | 宜家家居：IKEA Token 每日签到（可选 `pull_token.py` 手机提取 Token） | [README](./ikea/README.md) |
+| [sfsy](./sfsy/) | `daily.py` | 顺丰速运：APP/小程序签到 + 积分任务 + 生活特权（积分页 Cookie） | [README](./sfsy/README.md) |
+| [shangjinlianmeng](./shangjinlianmeng/) | `赏金联盟自动看广.py` | 赏金联盟：每账号每日 3 次广告上报（`SJLM=账号#密码`） | [README](./shangjinlianmeng/README.md) |
 
 ### 入口与定时建议
 
