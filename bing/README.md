@@ -60,7 +60,7 @@ Cookie 会过期，失效后脚本会提示重新抓取。建议每隔几周检�
 白名单加上 **`bing`**：
 
 ```text
-hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|huazhu|ikea|sfsy|shangjinlianmeng
+hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|huazhu|ikea|sfsy
 ```
 
 ### 依赖

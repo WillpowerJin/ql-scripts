@@ -27,4 +27,4 @@ numpy>=1.24
 
 # dianxin / tianyi（requests、pycryptodome 已在上方）
 certifi>=2023.7.22
-# huazhu / ikea / sfsy / shangjinlianmeng（requests、PyYAML 已在通用段）
+# huazhu / ikea / sfsy（requests、PyYAML 已在通用段）
