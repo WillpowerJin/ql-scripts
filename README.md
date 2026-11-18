@@ -16,7 +16,7 @@
 | 目录 | 入口脚本 | 说明 | 文档 |
 |------|----------|------|------|
 | [hifiti](./hifiti/) | `checkin.py` | [HiFiNi 音乐磁场](https://www.hifiti.com/) 每日签到（Cookie 优先，失效可密码重登） | [说明](./hifiti/README.md) |
-| [xijiu](./xijiu/) | `daily.py` | 习酒君品荟：积分相关 + 文旅酒谷（种养/任务等） | [说明](./xijiu/README.md) |
+| [xijiu](./xijiu/) | `daily.py` | 习酒君品荟：酒谷签到/种养/任务（原积分签到已移除） | [说明](./xijiu/README.md) |
 | [quark](./quark/) | `quark_checkin.py` | 夸克网盘每日签到领空间（需抓包参数） | [说明](./quark/README.md) |
 | [bilibili](./bilibili/) | `get_cookie.py` + `daily.py` | B 站：扫码拿 Cookie + 每日任务（**默认不投币，保硬币**） | [说明](./bilibili/README.md) |
 | [fanghua](./fanghua/) | `main.py` | 芳华未来：Token / 短信验证码登录 + 签到/刷视频挂机（密码登录已关闭） | [说明](./fanghua/README.md) |
@@ -38,7 +38,7 @@
 | 脚本 | 青龙任务建议 | 备注 |
 |------|----------------|------|
 | `hifiti/checkin.py` | 每天定时 | 环境变量见子目录 README |
-| `xijiu/daily.py` | 每天定时 | `pull_access_token.py` 仅本地 root 安卓用，订阅已排除 |
+| `xijiu/daily.py` | 每天定时 | `XIJIU_ACCOUNTS` / `XIJIU_LOGIN_CODE`；酒谷滑块建议 `XIJIU_OCR_SERVER` |
 | `quark/quark_checkin.py` | 每天定时 | `COOKIE_QUARK` 等 |
 | `bilibili/get_cookie.py` | **手动**（Cookie 失效时） | 手机 B 站扫码 |
 | `bilibili/daily.py` | 每天定时 | 依赖扫码缓存的 Cookie |
@@ -73,7 +73,7 @@
 链接：     https://github.com/WillpowerJin/ql-scripts.git
 分支：     main
 白名单：   hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|huazhu|ikea|sfsy|shangjinlianmeng
-黑名单：   pull_access_token|pull_token
+黑名单：   pull_token
 扩展名：   py
 定时规则： 30 8 * * *
 ```
@@ -81,7 +81,7 @@
 **只复制黑名单（不要加 crypto_api，否则芳华 main 会缺文件）：**
 
 ```text
-pull_access_token|pull_token
+pull_token
 ```
 
 **只复制白名单：**
@@ -94,7 +94,7 @@ hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxi
 |------|------|
 | 链接 | 只要 git 地址；不要填 README 网页，也不要整段 `ql repo ...` |
 | 白名单 | 用**目录名**，一次拉齐该目录下入口脚本 |
-| 黑名单 | `pull_access_token`（习酒本地抠 token）、`pull_token`（宜家本地抓 Token）。**不要**把 `crypto_api` 写进黑名单——那是芳华库文件，黑了会不下载，`main.py` 直接报错 |
+| 黑名单 | `pull_token`（宜家本地抓 Token）。**不要**把 `crypto_api` 写进黑名单——那是芳华库文件，黑了会不下载，`main.py` 直接报错 |
 | 扩展名 | 填 `py` |
 | 定时 | 只控制「自动拉库」 |
 
@@ -113,7 +113,7 @@ https://ghfast.top/https://github.com/WillpowerJin/ql-scripts.git
 在青龙容器内：
 
 ```bash
-ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|huazhu|ikea|sfsy|shangjinlianmeng" "pull_access_token|pull_token" "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|huazhu|ikea|sfsy|shangjinlianmeng" "pull_token" "" "main" "py"
 ```
 
 拉取成功后，脚本管理中应类似：
@@ -140,7 +140,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 …/shangjinlianmeng/赏金联盟自动看广.py  ← 赏金联盟广告上报
 ```
 
-不应把 `pull_access_token.py` / `pull_token.py` 建成任务（黑名单已排除）。
+不应把 `pull_token.py` 建成任务（黑名单已排除）。
 
 ### 公共通知（Bark）
 
@@ -166,11 +166,9 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 │   ├── requirements.txt
 │   └── README.md
 ├── xijiu/
-│   ├── daily.py
-│   ├── pull_access_token.py  # 本地用；订阅黑名单可排除
+│   ├── daily.py              # 酒谷签到/种养/任务
 │   ├── config.example.yaml
 │   ├── requirements.txt
-│   ├── quantumultx/          # 可选 QX 辅助，默认黑名单不拉
 │   └── README.md
 ├── quark/
 │   ├── quark_checkin.py

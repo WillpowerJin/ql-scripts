@@ -1,26 +1,23 @@
-# 习酒 · 君品荟
+# 习酒 · 君品荟（酒谷）
 # cp config.example.yaml config.yaml 后填写（config.yaml 勿提交）
 
 accounts:
-  # login_code：抓包 xcx.exijiu.com / apimallwm.exijiu.com 请求头
-  # access_token：抓包 fm.exijiu.com 请求头 X-access-token（每日签到领积分）
-  # wx_code：可选，fillSignIn 用的 wx.login 临时码（约 5 分钟有效；当天已签可只配 access_token 查状态）
+  # login_code：抓包 xcx.exijiu.com 请求头（酒谷 JWT 换票必填）
   - name: "主号"
     login_code: "在此填写 login_code"
-    access_token: ""   # 例：一长串 token
-    # wx_code: ""
 
-# 每日签到领积分（fm）+ 旧签到有礼兜底
-do_sign: true
+  # - name: "iPhone"
+  #   login_code: ""
+
 # 习酒文旅 → 酒谷活动
 do_garden: true
 # 酒兑积分（默认关，避免误兑）
 exchange_wine: false
 
 # 滑块 OCR（酒谷每日验证）
-# 远程：与公开脚本兼容，POST {ocr_server}/capcode
-# ocr_server: "http://127.0.0.1:8000"
-# 也可不配，安装 ddddocr 走本地识别：pip install ddddocr
+# 远程：POST {ocr_server}/capcode
+# ocr_server: "http://ip:7777"
+# 也可本机安装 ddddocr 走本地识别（青龙 Alpine 不建议）
 
 timeout: 25
 # user_agent: "..."

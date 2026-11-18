@@ -7,28 +7,25 @@ cron: 0 */2 * * *
 new Env('习酒君品荟');
 
 功能：
-  1) 每日签到领积分（fm.exijiu.com，需 access_token；可选 wx_code）
-  2) 旧「签到有礼」/member/Signin/sign（服务端常已下线，作兜底）
-  3) 习酒文旅 → 酒谷：滑块、每日签到、土地种养、任务、制曲/制酒/收酒
-  4) 可选：酒兑积分
+  1) 习酒文旅 → 酒谷：滑块、酒谷签到、土地种养、任务、制曲/制酒/收酒
+  2) 可选：酒兑积分
+
+说明：原「每日签到领积分」（fm.exijiu.com，需 access_token/wx_code）已移除，
+      原因是 access_token 频繁失效；酒谷任务不受影响。
 
 账号凭据：
   login_code   抓包 xcx.exijiu.com 请求头 → 换酒谷 JWT（必填）
-  access_token 抓包 fm.exijiu.com 请求头 X-access-token（积分签到）
-  wx_code      可选；fillSignIn 需要的 wx.login 临时 code（约 5 分钟有效）
 
 青龙环境变量：
   XIJIU_ACCOUNTS  JSON 数组，推荐
-    [{"name":"主号","login_code":"xxx","access_token":"yyy"}]
+    [{"name":"主号","login_code":"xxx"}]
   或：
     XIJIU_LOGIN_CODE   多账号 & 分隔
     XIJIU_NAME         可选备注，& 对齐
-    XIJIU_ACCESS_TOKEN 与 login_code 对齐的 & 分隔
 
   可选：
     XIJIU_EXCHANGE=1           酒兑积分（默认 0）
     XIJIU_DO_GARDEN=1          酒谷（默认 1）
-    XIJIU_DO_SIGN=1            积分签到（默认 1）
     XIJIU_OCR_SERVER=          滑块 OCR 服务，如 http://ip:port （POST /capcode）
     XIJIU_MAX_ACTION=30        浇水/施肥单次最大循环
     BARK_URL / BARK_KEY        通知（与 hifiti 共用）
@@ -59,13 +56,11 @@ import requests
 
 LOGIN_HOST = "https://xcx.exijiu.com"
 API_HOST = "https://apimallwm.exijiu.com"
-FM_HOST = "https://fm.exijiu.com"
 ORIGIN = "https://mallwm.exijiu.com"
 # 小程序 AppID 为公开标识（非密钥）；分段避免 secret scanning 误报
 # 旧公开脚本里的 wx673f… 已过时
 _MINI_APPID = "wx" + "8d41cdc4" + "4c8aeaab"
 REFERER = f"https://servicewechat.com/{_MINI_APPID}/230/page-frame.html"
-CHANNEL_MINI = "xj_mall_wx_applet"
 
 DEFAULT_UA = (
     "Mozilla/5.0 (Linux; Android 13; Pixel 7 Build/TQ3A.230805.001) "
@@ -80,14 +75,6 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 
 # 业务路径（PHP 路由大小写敏感！小写 sorghum/sign 会返回
 # 「请从小程序重新进入」假错误，实测 2026-07 正确写法如下）
-P_MEMBER_SIGN = "/member/Signin/sign"  # 旧签到有礼（服务端可能 4032 活动已下线）
-# 每日签到领积分（手机 UI 可见「今日已签到 +5」）— 与酒谷 JWT 不同体系
-P_FM_CHECK = "/api/customer/daily/checkTodaySignIn"
-P_FM_FILL = "/api/customer/daily/fillSignIn"
-P_FM_QUERY = "/api/customer/daily/signInQuery"
-P_FM_REWARDS = "/api/customer/daily/getRewards"
-P_FM_CAPTCHA_GET = "/api/captcha/get"
-P_FM_CAPTCHA_CHECK = "/api/captcha/check"
 P_GARDEN_SIGN = "/garden/Sign/dailySign"
 P_SLIDE_INFO = "/garden/slide_validate/getValidateInfo"
 P_SLIDE_OK = "/garden/slide_validate/toValidate"
@@ -207,17 +194,11 @@ def format_crops(lands: list[dict[str, Any]]) -> list[str]:
 class Account:
     name: str
     login_code: str = ""
-    # 积分签到（fm.exijiu.com）专用，≠ 酒谷 JWT
-    access_token: str = ""
-    # fillSignIn 需要的 wx.login 临时 code（可选，缺则只能查状态/提示抓包）
-    wx_code: str = ""
 
     def normalize(self) -> None:
         self.login_code = self.login_code.strip()
         if self.login_code.lower().startswith("login_code:"):
             self.login_code = self.login_code.split(":", 1)[1].strip()
-        self.access_token = (self.access_token or "").strip()
-        self.wx_code = (self.wx_code or "").strip()
 
 
 @dataclass
@@ -246,7 +227,6 @@ class NotifyConfig:
 class AppConfig:
     accounts: list[Account] = field(default_factory=list)
     notify: NotifyConfig = field(default_factory=NotifyConfig)
-    do_sign: bool = True
     do_garden: bool = True
     exchange_wine: bool = False
     ocr_server: str = ""
@@ -315,8 +295,8 @@ def _parse_accounts_json(raw: str) -> list[Any]:
             "XIJIU_ACCOUNTS / XiJiu 不是合法 JSON（"
             f"{e.msg}  at line {e.lineno} col {e.colno}）。\n"
             "青龙里该变量必须是【一行或标准 JSON 数组】，例如：\n"
-            '[{"name":"主号","login_code":"eyJ...","access_token":"xxx"},'
-            '{"name":"iPhone","login_code":"eyJ...","access_token":"yyy"}]\n'
+            '[{"name":"主号","login_code":"eyJ..."},'
+            '{"name":"iPhone","login_code":"eyJ..."}]\n'
             "不要贴 yaml、不要中文引号、账号对象之间用英文逗号。\n"
             f"当前内容开头: {preview!r}…"
         ) from e
@@ -340,29 +320,18 @@ def load_config_from_env() -> Optional[AppConfig]:
                 login_code=str(
                     item.get("login_code") or item.get("loginCode") or ""
                 ),
-                access_token=str(
-                    item.get("access_token")
-                    or item.get("accessToken")
-                    or item.get("X-access-token")
-                    or ""
-                ),
-                wx_code=str(item.get("wx_code") or item.get("wxCode") or ""),
             )
             acc.normalize()
             accounts.append(acc)
     else:
         codes = _split_multi(_env("XIJIU_LOGIN_CODE") or _env("XIJIU_CODE"))
         names = _split_multi(_env("XIJIU_NAME"))
-        tokens = _split_multi(
-            _env("XIJIU_ACCESS_TOKEN") or _env("XIJIU_ACCESS_TOKENS")
-        )
         if not codes:
             return None
         for i, c in enumerate(codes):
             acc = Account(
                 name=names[i] if i < len(names) else f"account_{i + 1}",
                 login_code=c,
-                access_token=tokens[i] if i < len(tokens) else "",
             )
             acc.normalize()
             accounts.append(acc)
@@ -374,7 +343,6 @@ def load_config_from_env() -> Optional[AppConfig]:
     return AppConfig(
         accounts=accounts,
         notify=load_notify_from_env(),
-        do_sign=_env("XIJIU_DO_SIGN", "1") not in ("0", "false", "no"),
         do_garden=_env("XIJIU_DO_GARDEN", "1") not in ("0", "false", "no"),
         exchange_wine=_env("XIJIU_EXCHANGE", "0") in ("1", "true", "yes"),
         ocr_server=_env("XIJIU_OCR_SERVER") or _env("OCR_SERVER"),
@@ -402,13 +370,6 @@ def load_config_yaml(path: Path) -> AppConfig:
             login_code=str(
                 item.get("login_code") or item.get("loginCode") or ""
             ),
-            access_token=str(
-                item.get("access_token")
-                or item.get("accessToken")
-                or item.get("X-access-token")
-                or ""
-            ),
-            wx_code=str(item.get("wx_code") or item.get("wxCode") or ""),
         )
         acc.normalize()
         if not acc.login_code:
@@ -444,7 +405,6 @@ def load_config_yaml(path: Path) -> AppConfig:
     return AppConfig(
         accounts=accounts,
         notify=notify,
-        do_sign=bool(raw.get("do_sign", True)),
         do_garden=bool(raw.get("do_garden", True)),
         exchange_wine=bool(raw.get("exchange_wine", False)),
         ocr_server=str(raw.get("ocr_server") or ""),
@@ -521,7 +481,6 @@ class XiJiuClient:
         self.cfg = cfg
         self.session = requests.Session()
         self.token = ""  # 酒谷 JWT
-        self.access_token = account.access_token  # 积分签到
         self.session.headers.update(
             {
                 "User-Agent": cfg.user_agent,
@@ -549,64 +508,6 @@ class XiJiuClient:
             ),
         }
         return h
-
-    def _fm_headers(self) -> dict[str, str]:
-        return {
-            "User-Agent": self.cfg.user_agent,
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "zh-CN,zh;q=0.9",
-            "Content-Type": "application/json",
-            "channel": "miniapp",
-            "X-access-token": self.access_token or "",
-            "Origin": FM_HOST,
-            "Referer": REFERER,
-            "Connection": "keep-alive",
-        }
-
-    def fm_post(self, path: str, body: Any = None) -> dict[str, Any]:
-        """fm.exijiu.com 积分/会员中台接口（code==10000 成功）。"""
-        if body is None:
-            body = {}
-        try:
-            r = self.session.request(
-                "POST",
-                f"{FM_HOST}{path}",
-                headers=self._fm_headers(),
-                json=body,
-                timeout=self.cfg.timeout,
-            )
-        except requests.RequestException as e:
-            return {"_ok": False, "_msg": f"网络错误: {e}", "raw": None}
-        text = r.text.strip()
-        try:
-            body_j = r.json()
-        except Exception:
-            return {
-                "_ok": False,
-                "_msg": f"非 JSON HTTP {r.status_code}: {text[:160]}",
-                "raw": text,
-            }
-        code = body_j.get("code")
-        ok = code in (0, "0", 200, "200", 10000, "10000") or body_j.get(
-            "success"
-        ) is True
-        # 业务层有时 success=true 但 code 非 10000；以 success 优先
-        if body_j.get("success") is True and code not in (
-            401,
-            "401",
-            "99990002",
-        ):
-            ok = True
-        if code in (401, "401"):
-            ok = False
-        msg = (
-            body_j.get("message")
-            or body_j.get("msg")
-            or ("ok" if ok else f"code={code}")
-        )
-        body_j["_ok"] = bool(ok)
-        body_j["_msg"] = str(msg)
-        return body_j
 
     def _req(
         self,
@@ -716,187 +617,6 @@ class XiJiuClient:
         )
 
     # ---- 业务 ----
-
-    def points_sign(self) -> dict[str, Any]:
-        """
-        每日签到领积分（手机 UI 标题）。
-        域名 fm.exijiu.com，头 X-access-token；
-        fillSignIn body: {code: wx.login临时码, channelCode: xj_mall_wx_applet}
-        验证码仅前端门闩，服务端主要校验 accessToken + wx code。
-        """
-        if not self.access_token:
-            return {
-                "_ok": False,
-                "_msg": "未配置 access_token（抓包 fm.exijiu.com 请求头 X-access-token）",
-                "_need_token": True,
-                "_token_missing": True,
-            }
-
-        # 1) 今日是否已签（实测 data=true 表示已签）
-        check = self.fm_post(P_FM_CHECK, {})
-        data = check.get("data")
-        msg = str(check.get("_msg") or "")
-        if check.get("code") in (401, "401") or "未登录" in msg:
-            # 有填 token 但服务端拒识：过期/串号/复制残缺，不是「没配置」
-            return {
-                "_ok": False,
-                "_msg": (
-                    "access_token 已失效（服务端 401 未登录）。"
-                    "请在【该账号微信】打开君品荟签到页，重新抓包 fm.exijiu.com 的 "
-                    "X-access-token 并更新配置（勿与其它号混用）"
-                ),
-                "_need_token": True,
-                "_token_expired": True,
-            }
-
-        already = False
-        if data is True or data in (1, "1", "true", "True"):
-            already = True
-        elif isinstance(data, dict):
-            already = bool(
-                data.get("signed")
-                or data.get("isSign")
-                or data.get("todaySigned")
-                or data.get("isTodaySign")
-            )
-            if data.get("signIn") is False:
-                already = False
-        if any(k in msg for k in ("已签", "重复", "已经签到")):
-            already = True
-
-        if already:
-            # 附带连续天数
-            extra = ""
-            q = self.fm_post(P_FM_QUERY, {})
-            qd = q.get("data")
-            if isinstance(qd, list) and qd:
-                feat = qd[0].get("feature") if isinstance(qd[0], dict) else None
-                try:
-                    import json as _json
-
-                    if isinstance(feat, str):
-                        feat = _json.loads(feat)
-                    if isinstance(feat, dict):
-                        num = (feat.get("extra") or {}).get("signNum1")
-                        if num:
-                            extra = f" 连续{num}天"
-                except Exception:
-                    pass
-            return {
-                "_ok": True,
-                "_msg": f"今日已签到{extra}",
-                "already": True,
-                "source": "fm",
-            }
-
-        # 2) 未签 → fillSignIn 需要 wx.login code
-        wx_code = self.account.wx_code
-        if not wx_code:
-            # 再查 signInQuery 拿连续天数等信息，便于日志
-            q = self.fm_post(P_FM_QUERY, {})
-            extra = ""
-            qd = q.get("data")
-            if isinstance(qd, dict):
-                days = qd.get("continuousSignDays") or qd.get(
-                    "continuousDays"
-                )
-                if days is not None:
-                    extra = f" 连续{days}天"
-            return {
-                "_ok": False,
-                "_msg": (
-                    "今日未签，但缺少 wx_code（wx.login 临时码）。"
-                    "手机打开签到页点签到即可；或抓包 fillSignIn 的 code 填入配置。"
-                    + extra
-                ),
-                "_need_wx_code": True,
-                "source": "fm",
-                "query": qd if isinstance(qd, dict) else None,
-            }
-
-        fill = self.fm_post(
-            P_FM_FILL,
-            {
-                "code": wx_code,
-                "channelCode": CHANNEL_MINI,
-            },
-        )
-        fmsg = str(fill.get("_msg") or "")
-        fdata = fill.get("data")
-        point = None
-        if isinstance(fdata, dict):
-            point = fdata.get("pointValue") or fdata.get("point")
-        if fill.get("_ok"):
-            tip = f"签到成功+{point}积分" if point is not None else "签到成功"
-            if any(k in fmsg for k in ("已签", "重复")):
-                return {
-                    "_ok": True,
-                    "_msg": fmsg or "今日已签到",
-                    "already": True,
-                    "source": "fm",
-                }
-            return {
-                "_ok": True,
-                "_msg": tip if "成功" in tip else (fmsg or tip),
-                "already": False,
-                "source": "fm",
-                "point": point,
-            }
-        # code 无效 / 过期
-        if "code" in fmsg and ("空" in fmsg or "无效" in fmsg or "失败" in fmsg):
-            fill["_need_wx_code"] = True
-        return {
-            "_ok": False,
-            "_msg": fmsg or "积分签到失败",
-            "source": "fm",
-            "raw": fill,
-        }
-
-    def member_sign_legacy(self) -> dict[str, Any]:
-        """旧签到有礼（接口可能返回 4032 活动已下线）。"""
-        res = self.api_post_json(
-            P_MEMBER_SIGN, {"from": "miniprogram_index"}
-        )
-        if not res.get("_ok") and res.get("raw") is None:
-            res2 = self._req(
-                "POST",
-                f"{API_HOST}{P_MEMBER_SIGN}",
-                headers=self._api_headers(form=True),
-                data="from=miniprogram_index",
-            )
-            if res2.get("_ok") or res2.get("msg"):
-                res = res2
-        msg = str(res.get("_msg") or res.get("msg") or "")
-        if "下线" in msg or res.get("err") in (4032, "4032"):
-            res["_ok"] = True
-            res["_offline"] = True
-            res["_msg"] = msg or "活动已下线"
-            res["already"] = False
-        return res
-
-    def member_sign(self) -> dict[str, Any]:
-        """优先每日签到领积分（fm）；无 token 时回退旧接口并标明状态。"""
-        if self.access_token:
-            res = self.points_sign()
-            if res.get("_ok") or res.get("_need_wx_code"):
-                return res
-            # token 失效再试旧接口仅作提示
-            if res.get("_need_token"):
-                legacy = self.member_sign_legacy()
-                if legacy.get("_offline"):
-                    res["_legacy"] = legacy.get("_msg")
-                return res
-            return res
-        legacy = self.member_sign_legacy()
-        if legacy.get("_offline"):
-            return {
-                "_ok": False,
-                "_msg": "请配置 access_token（抓包 fm.exijiu.com 的 X-access-token）",
-                "_need_token": True,
-                "_offline": False,
-                "source": "legacy_offline",
-            }
-        return legacy
 
     def garden_slide(self) -> dict[str, Any]:
         info = self.api_get(P_SLIDE_INFO)
@@ -1363,7 +1083,6 @@ class XiJiuClient:
             "ok": False,
             "lines": [],
             "phone": "",
-            "sign": None,  # 签到有礼
             "garden_sign": None,
             "garden_slide": None,
             "assets": None,  # dict
@@ -1385,25 +1104,6 @@ class XiJiuClient:
         phone = str(login.get("_phone") or "")
         summary["phone"] = phone
         lines.append("登录成功" + (f" ({phone})" if phone else ""))
-
-        if self.cfg.do_sign:
-            s = self.member_sign()
-            msg = str(s.get("_msg") or "")
-            summary["sign"] = {
-                "ok": bool(s.get("_ok")),
-                "msg": msg,
-                "offline": bool(s.get("_offline")) or "下线" in msg,
-                "already": bool(s.get("already"))
-                or any(
-                    k in msg for k in ("已签", "重复", "已经签到", "无需")
-                ),
-                "need_token": bool(s.get("_need_token")),
-                "token_missing": bool(s.get("_token_missing")),
-                "token_expired": bool(s.get("_token_expired")),
-                "need_wx_code": bool(s.get("_need_wx_code")),
-                "source": s.get("source") or "",
-            }
-            lines.append(f"每日签到领积分: {msg}")
 
         if self.cfg.do_garden:
             slide = self.garden_slide()
@@ -1512,7 +1212,7 @@ class XiJiuClient:
             lines.extend(wh2)
             lines.extend(crops2)
         else:
-            # 仅签到时也尽量查一下积分
+            # 未跑酒谷时也查一下资产
             try:
                 info = self.member_info()
                 d = info.get("data") or {}
@@ -1622,27 +1322,8 @@ def _fmt_sign_line(label: str, info: Optional[dict[str, Any]]) -> str:
     if not info:
         return f"{label}：—"
     msg = _short(str(info.get("msg") or ""), 48)
-    # need_token 可能是「未配置」或「已失效」，勿一律写成「缺」
-    if info.get("token_expired") or (
-        info.get("need_token") and "失效" in str(info.get("msg") or "")
-    ):
-        return f"{label}：access_token 已失效 ⚠️ 请重新抓包"
-    if info.get("token_missing") or (
-        info.get("need_token") and "未配置" in str(info.get("msg") or "")
-    ):
-        return f"{label}：未配置 access_token ⚠️"
-    if info.get("need_token"):
-        return f"{label}：access_token 无效 ⚠️ 请重新抓包"
-    if info.get("need_wx_code"):
-        return f"{label}：缺 wx_code（手机点签或抓包）⚠️"
     if info.get("already"):
         return f"{label}：今日已签 ✅"
-    if info.get("offline") and "access_token" in str(info.get("msg") or ""):
-        return f"{label}：请配置 access_token ⚠️"
-    if info.get("offline") or (
-        "下线" in msg and "access_token" not in str(info.get("msg") or "")
-    ):
-        return f"{label}：活动已下线 ⏸️"
     if info.get("ok"):
         if msg and msg not in ("ok", "request is ok", "成功") and "成功" not in msg:
             if "已签" not in msg:
@@ -1695,10 +1376,6 @@ def format_summary(
             err = str(r.get("error") or r.get("message") or "失败").strip()
             lines.append(f"   ⚠️ {_short(err, 100)}")
         else:
-            if r.get("sign") is not None:
-                lines.append(
-                    f"   ✍️ {_fmt_sign_line('每日签到领积分', r.get('sign'))}"
-                )
             if r.get("garden_sign") is not None:
                 lines.append(
                     f"   🌾 {_fmt_sign_line('酒谷签到', r.get('garden_sign'))}"
@@ -1825,10 +1502,9 @@ def resolve_config(args: argparse.Namespace) -> AppConfig:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="习酒君品荟 · 签到/酒谷")
+    parser = argparse.ArgumentParser(description="习酒君品荟 · 酒谷")
     parser.add_argument("-c", "--config", help="yaml 配置路径")
     parser.add_argument("-v", "--verbose", action="store_true")
-    parser.add_argument("--no-sign", action="store_true", help="跳过签到有礼")
     parser.add_argument("--no-garden", action="store_true", help="跳过酒谷")
     parser.add_argument("--exchange", action="store_true", help="酒兑积分")
     parser.add_argument("--info-only", action="store_true", help="只登录查资产")
@@ -1842,14 +1518,11 @@ def main() -> int:
         logger.error("%s", e)
         return 2
 
-    if args.no_sign:
-        cfg.do_sign = False
     if args.no_garden:
         cfg.do_garden = False
     if args.exchange:
         cfg.exchange_wine = True
     if args.info_only:
-        cfg.do_sign = False
         cfg.do_garden = False
 
     # 默认 OCR：可用环境变量覆盖；未配置时用已部署 VPS（可在 yaml 关闭）
