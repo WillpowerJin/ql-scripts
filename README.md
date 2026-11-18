@@ -26,6 +26,11 @@
 | [kuailefeng](./kuailefeng/) | `daily.py` | 快乐蜂：手机号密码登录 + 免费/转盘抽奖（`/check` 自适应）+ Bark | [说明](./kuailefeng/README.md) |
 | [dianxin](./dianxin/) | `daily.py` | 电信 AI 奇遇：账密登录 + 创作任务攒积分换话费/抽奖 + Bark | [说明](./dianxin/README.md) |
 | [jinpinghu](./jinpinghu/) | `daily.py` | 今平湖：帐密登录 + 阅读任务 + 自动抽奖（多账号隔离，滑块支持 cv2/ddddocr/外部 OCR） | [说明](./jinpinghu/README.md) |
+| [tianyi](./tianyi/) | `daily.py` | 电信营业厅：签到 + 金豆任务 + 宠物喂养 + 金豆转盘（手机号/服务密码/AndroidID） | [说明](./tianyi/README.md) |
+| [huazhu](./huazhu/) | `daily.py` | 华住会：userToken 每日签到 + 积分/连签查询（Bark / PushPlus / 青龙通知） | [说明](./huazhu/README.md) |
+| [ikea](./ikea/) | `daily.py` | 宜家家居：IKEA Token 每日签到（可选 `pull_token.py` 手机提取 Token） | [说明](./ikea/README.md) |
+| [sfsy](./sfsy/) | `daily.py` | 顺丰速运：APP/小程序签到 + 积分任务 + 生活特权（积分页 Cookie） | [说明](./sfsy/README.md) |
+| [shangjinlianmeng](./shangjinlianmeng/) | `赏金联盟自动看广.py` | 赏金联盟：每账号每日 3 次广告上报（`SJLM=账号#密码`） | [说明](./shangjinlianmeng/README.md) |
 
 ### 入口与定时建议
 
@@ -43,6 +48,11 @@
 | `kuailefeng/daily.py` | 每天定时 `0 9 * * *` | `KLF_ACCOUNTS` 或 `KLF=手机号#密码`；间隔默认随机 5–8s |
 | `dianxin/daily.py` | 每 6 小时 `0 */6 * * *` | `DIANXIN=手机号#密码[#AndroidID][#备注]`；首次建议 `DIANXIN_MODE=observe` 试跑 |
 | `jinpinghu/daily.py` | 每天定时 `5 9 * * *`（任务集 09:00 刷新） | `JPH=手机号#密码`（多账号 `&`）；首次先在 App 重置密码并绑定提现微信；滑块默认 cv2，也可 `JPH_OCR=remote` |
+| `tianyi/daily.py` | 每天定时 `30 8 * * *` | `chinaTelecomAccount=手机号#服务密码#AndroidID[#备注]` 或 `TIANYI_ACCOUNTS`；直播任务较久，超时建议 ≥20min |
+| `huazhu/daily.py` | 每天定时 `15 8 * * *` | `HZ_TOKEN=userToken`（多账号 `&`）；首次抓包获取 userToken |
+| `ikea/daily.py` | 每天定时 `20 8 * * *` | `IKEA_TOKEN=JWT`（多账号 `&`）；`pull_token.py` 仅本地用，订阅黑名单排除 |
+| `sfsy/daily.py` | 每天定时 `0 8 * * *` | `sfsyUrl` / `SFSY_COOKIE` / `SFSY_ACCOUNTS`；Cookie 失效需重新抓积分页 |
+| `shangjinlianmeng/赏金联盟自动看广.py` | 每天定时 `0 9 * * *` | `SJLM=账号#密码[#账号#密码]`；每账号 3 次广告，间隔 20s |
 
 ---
 
@@ -60,8 +70,8 @@
 类型：     公开仓库
 链接：     https://github.com/WillpowerJin/ql-scripts.git
 分支：     main
-白名单：   hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu
-黑名单：   pull_access_token
+白名单：   hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|huazhu|ikea|sfsy|shangjinlianmeng
+黑名单：   pull_access_token|pull_token
 扩展名：   py
 定时规则： 30 8 * * *
 ```
@@ -69,20 +79,20 @@
 **只复制黑名单（不要加 crypto_api，否则芳华 main 会缺文件）：**
 
 ```text
-pull_access_token
+pull_access_token|pull_token
 ```
 
 **只复制白名单：**
 
 ```text
-hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu
+hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|huazhu|ikea|sfsy|shangjinlianmeng
 ```
 
 | 字段 | 说明 |
 |------|------|
 | 链接 | 只要 git 地址；不要填 README 网页，也不要整段 `ql repo ...` |
 | 白名单 | 用**目录名**，一次拉齐该目录下入口脚本 |
-| 黑名单 | 仅 `pull_access_token`（习酒本地抠 token）。**不要**把 `crypto_api` 写进黑名单——那是芳华库文件，黑了会不下载，`main.py` 直接报错 |
+| 黑名单 | `pull_access_token`（习酒本地抠 token）、`pull_token`（宜家本地抓 Token）。**不要**把 `crypto_api` 写进黑名单——那是芳华库文件，黑了会不下载，`main.py` 直接报错 |
 | 扩展名 | 填 `py` |
 | 定时 | 只控制「自动拉库」 |
 
@@ -101,7 +111,7 @@ https://ghfast.top/https://github.com/WillpowerJin/ql-scripts.git
 在青龙容器内：
 
 ```bash
-ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu" "pull_access_token" "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|huazhu|ikea|sfsy|shangjinlianmeng" "pull_access_token|pull_token" "" "main" "py"
 ```
 
 拉取成功后，脚本管理中应类似：
@@ -120,9 +130,14 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 …/kuailefeng/daily.py        ← 快乐蜂抽奖
 …/dianxin/daily.py          ← 电信 AI 奇遇
 …/jinpinghu/daily.py        ← 今平湖阅读红包
+…/tianyi/daily.py           ← 电信营业厅签到/金豆/转盘
+…/huazhu/daily.py           ← 华住会签到
+…/ikea/daily.py             ← 宜家签到
+…/sfsy/daily.py             ← 顺丰速运积分任务
+…/shangjinlianmeng/赏金联盟自动看广.py  ← 赏金联盟广告上报
 ```
 
-不应把 `pull_access_token.py` 建成任务（黑名单已排除）。
+不应把 `pull_access_token.py` / `pull_token.py` 建成任务（黑名单已排除）。
 
 ### 公共通知（Bark）
 
@@ -195,6 +210,32 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 ├── dianxin/
 │   ├── daily.py              # 电信 AI 奇遇（创作积分换话费/抽奖）
 │   ├── config.example.yaml
+│   ├── requirements.txt
+│   └── README.md
+├── tianyi/
+│   ├── daily.py              # 电信营业厅签到 + 金豆任务 + 宠物 + 转盘
+│   ├── config.example.yaml
+│   ├── requirements.txt
+│   └── README.md
+├── huazhu/
+│   ├── daily.py              # 华住会签到（userToken）
+│   ├── config.example.yaml
+│   ├── requirements.txt
+│   └── README.md
+├── ikea/
+│   ├── daily.py              # 宜家签到（IKEA Token）
+│   ├── pull_token.py         # 本地抓 Token；订阅黑名单可排除
+│   ├── config.example.yaml
+│   ├── requirements.txt
+│   ├── quantumultx/
+│   └── README.md
+├── sfsy/
+│   ├── daily.py              # 顺丰速运积分任务（积分页 Cookie）
+│   ├── config.example.yaml
+│   ├── requirements.txt
+│   └── README.md
+├── shangjinlianmeng/
+│   ├── 赏金联盟自动看广.py   # 广告上报入口
 │   ├── requirements.txt
 │   └── README.md
 └── jinpinghu/

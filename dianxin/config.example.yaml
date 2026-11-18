@@ -1,0 +1,41 @@
+# 本地运行用配置（青龙请用环境变量，见 README）
+# cp config.example.yaml config.yaml
+# 不要把 config.yaml 提交到 Git
+
+accounts:
+  - name: "主号"                 # 日志 / Bark 显示名，可省略
+    mobile: "13800138000"        # 电信手机号
+    password: "your_password"    # 电信营业厅 App 登录密码
+    # android_id: "0123456789abcdef"  # 可选：16 位十六进制，模拟真实设备避开 3006 风控
+
+  # - name: "备号"
+  #   mobile: "13900139000"
+  #   password: "..."
+
+# 模式：auto（默认，满 1000 兑换 10 元话费）/ draw（全抽奖）/ save（只攒分）/ observe（只查询）
+# mode: "auto"
+
+# 可选调参（一般不用动）
+# make_count: 17        # 单轮制作上限（每期上限 340 分 / 每次 20 分）
+# make_interval: 20     # 制作提交最小间隔秒，防 10007 频控
+# max_draws: 10         # 单轮抽奖上限
+
+# 可选：代理提取 API（防 10007 同 IP 频控，不配置则直连）
+# proxy_api: "http://..."
+
+# 可选：覆盖活动邀请码（默认沿用原脚本内置值）
+# invite_code: ""
+
+# 可选：Bark 标题里的全局备注
+# note: "家里电脑"
+
+# 状态/缓存目录（默认本目录 state/；青龙默认 /ql/data/dianxin）
+# state_dir: "./state"
+
+notify:
+  # 与仓库其它项目共用：也可用环境变量 BARK_URL / BARK_KEY
+  # bark_url: "https://api.day.app/你的Key/"
+  bark_key: ""
+  # bark_server: "https://api.day.app"
+  bark_group: "电信AI奇遇"
+  # bark_sound: "bell"

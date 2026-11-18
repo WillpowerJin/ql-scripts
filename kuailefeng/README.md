@@ -6,7 +6,7 @@
 
 1. RSA 加密密码 → `POST /auth/password/login` 获取 `token` + Cookie  
 2. 免费抽奖：`POST /v1/turntables/free` × 3（默认间隔随机 5–8s）  
-3. 剩余抽奖：`GET /v1/turntables/check` 取 `idHash`（必要时再 `/ad`）→ `POST /v1/turntables/{idHash}`  
+3. 剩余抽奖：优先 `POST /ad`（与 `快乐蜂.js` 相同密文）取 `idHash` → `POST /v1/turntables/{idHash}`；密码登录 token 不接受密文时回退 `GET /check`  
 4. Token 本地缓存，失效自动重登  
 5. Bark 推送汇总（可选，与 hifiti / quark 等共用 `BARK_*`）
 
@@ -80,14 +80,13 @@ python3 daily.py -v           # 详细日志
 ## 说明
 
 - 密码使用 H5 同款 RSA 公钥加密后提交  
-- 密码登录后的业务请求需：**`z-client: 2` + `Bearer` token + App 设备头**（`z-device` / `z-os` / `z-version` 等）  
-- **抽奖以 `GET /v1/turntables/check` 为准**：返回 `idHash` 再开奖；`state=3` 可抽，`state=5` 今日已用完  
-- **广告抽奖自适应**：`ad_times=0`（默认）时循环到 `/check` 提示用完为止；`>0` 仅作安全上限  
+- 登录仍走 H5 密码接口（`z-client: 2`）；业务请求与 JS 对齐：`z-token: Bearer <jwt>` + App 设备头，`z-client` 先按 JS 用 `1`，401 再自动切 `2`  
+- **广告抽奖**：先 `POST /ad` 原 JS 密文；密码登录 token 返回 `5001` 时改走 `GET /check`  
+- **`/check`**：`state=3` 可抽，`state=5` 今日已用完  
+- **广告抽奖自适应**：`ad_times=0`（默认）时抽到用完为止；`>0` 仅作安全上限  
 - **防检测间隔**：每轮抽奖默认随机等待 5–8 秒  
-- 不要写死 `POST /ad` 的 `advertisementId`/`stepId`。参数不匹配会 `code=5000 系统异常!`，手机端走 `/check` 仍可抽  
-- 仅当 `/check` 给出 `stepId` 时才调用 `/ad` 换 `idHash`  
-- 免费抽奖 / 开奖 body 用原脚本固定密文  
-- 常见业务码：`5621` 免费次数用完；`5612` 该次抽奖已使用；`5000` 多为参数/设备头错误  
+- 免费抽奖 / 开奖 / JS 模式 `/ad` body 用原脚本固定密文  
+- 常见业务码：`5621` 免费次数用完；`5612` 该次抽奖已使用；`5000` 多为次数用完或设备头错误；`5001` 为 `/ad` 密文与当前 token 不匹配  
 - 仅供学习交流，账号风险自负  
 
 ### 其它可选环境变量

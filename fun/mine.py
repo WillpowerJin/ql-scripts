@@ -6,7 +6,9 @@ FUN 矿池自动任务（登录 / 收矿 / 查状态 / 可选升级）
 cron: 10 8 * * *
 new Env('FUN矿池');
 
-环境变量 FUN（必填，多账号 & 或换行）：
+同一份脚本：青龙用环境变量，本地用 config.yaml。
+
+青龙环境变量 FUN（必填，多账号 & 或换行）：
   手机号#密码#收矿#升级
   手机号#密码#收矿#升级#备注
   手机号#密码#收矿#升级#备注#短信验证码
@@ -15,9 +17,14 @@ new Env('FUN矿池');
     13800138000#pass#1#0#iPhone
     13900139000#pass#1#0#Android
 
+本地：
+  cp config.example.yaml config.yaml
+  python3 mine.py
+  python3 mine.py --captcha 123456   # 首次新设备绑定
+
 新设备登录会下发短信验证码（HTTP 业务码 409）。
-首次：跑一遍触发短信 → 设 FUN_CAPTCHA=验证码（或账号第 6 段）→ 立刻再跑一遍完成绑定。
-绑定后请删掉验证码。设备指纹缓存在青龙 /ql/data/fun_device_cache.json。
+首次：跑一遍触发短信 → 填验证码再跑一遍完成绑定 → 删掉验证码。
+设备指纹：青龙 /ql/data/fun_device_cache.json ；本地 fun/device_cache.json。
 
 可选：
   FUN_NOTE=家里青龙          # 全局备注，进 Bark 标题
@@ -27,11 +34,12 @@ new Env('FUN矿池');
   BARK_SERVER / BARK_GROUP / BARK_SOUND
   FUN_BASE_URL               # 默认 https://exchange.acmes.dev/api/v1
 
-依赖：requests
+依赖：requests ；本地 yaml 再装 PyYAML
 """
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -133,18 +141,75 @@ def parse_accounts(raw: str) -> list[Account]:
     return out
 
 
-def resolve_captcha(acc: Account) -> str:
-    return acc.captcha or _env("FUN_CAPTCHA") or _env("FUN_SMS")
+def _as_bool(v: Any, default: bool = True) -> bool:
+    if v is None:
+        return default
+    if isinstance(v, bool):
+        return v
+    s = str(v).strip().lower()
+    if s in ("1", "true", "yes", "on", "y"):
+        return True
+    if s in ("0", "false", "no", "off", "n", ""):
+        return False
+    return default
+
+
+def running_on_qinglong() -> bool:
+    return bool(_env("QL_DATA_DIR")) or Path("/ql/data").is_dir()
+
+
+@dataclass
+class AppConfig:
+    accounts: list[Account]
+    note: str = ""
+    base_url: str = DEFAULT_BASE
+    bark_url: str = ""
+    bark_key: str = ""
+    bark_server: str = DEFAULT_BARK
+    bark_group: str = "FUN矿池"
+    bark_sound: str = ""
+    device_cache: str = ""
+    captcha: str = ""
+    source: str = ""  # env / yaml，仅日志
+
+
+def resolve_captcha(acc: Account, cfg: Optional[AppConfig] = None) -> str:
+    return (
+        acc.captcha
+        or (cfg.captcha if cfg else "")
+        or _env("FUN_CAPTCHA")
+        or _env("FUN_SMS")
+    )
+
+
+def captcha_hint() -> str:
+    if running_on_qinglong():
+        return (
+            "青龙新增环境变量 FUN_CAPTCHA=验证码"
+            "（或把验证码写到 FUN 第 6 段），立刻再运行本任务"
+        )
+    return (
+        "本地任选其一后立刻再跑："
+        " python3 mine.py --captcha 验证码"
+        " ｜ export FUN_CAPTCHA=验证码"
+        " ｜ 把验证码写进 config.yaml 该账号的 captcha"
+    )
 
 
 # ---------------------------------------------------------------------------
 # 设备指纹缓存（官方登录 header：X-Device-Id = md5("web:" + 本地串)）
 # ---------------------------------------------------------------------------
 
+_ACTIVE_CFG: Optional[AppConfig] = None
+
+
 def resolve_device_cache_path() -> Path:
     env = _env("FUN_DEVICE_CACHE")
     if env:
         return Path(env).expanduser()
+    if _ACTIVE_CFG and _ACTIVE_CFG.device_cache:
+        p = Path(_ACTIVE_CFG.device_cache).expanduser()
+        return p if p.is_absolute() else (SCRIPT_DIR / p)
     ql_data = _env("QL_DATA_DIR")
     if ql_data:
         return Path(ql_data) / "fun_device_cache.json"
@@ -215,38 +280,168 @@ def mark_device_bound(mobile: str, device_id: str, cache: dict[str, Any]) -> Non
 
 
 # ---------------------------------------------------------------------------
+# 配置：青龙环境变量优先，本地 config.yaml 兜底
+# ---------------------------------------------------------------------------
+
+def _notify_from_env() -> dict[str, str]:
+    url = _env("BARK_URL") or _env("BARK_PUSH")
+    key = _env("BARK_KEY") or _env("BARK_DEVICE_KEY")
+    if url and not url.startswith("http"):
+        key = key or url
+        url = ""
+    return {
+        "bark_url": url,
+        "bark_key": key,
+        "bark_server": _env("BARK_SERVER") or DEFAULT_BARK,
+        "bark_group": _env("BARK_GROUP"),
+        "bark_sound": _env("BARK_SOUND"),
+    }
+
+
+def load_config_from_env() -> Optional[AppConfig]:
+    accounts = parse_accounts(_env("FUN"))
+    if not accounts:
+        return None
+    n = _notify_from_env()
+    return AppConfig(
+        accounts=accounts,
+        note=_env("FUN_NOTE") or _env("FUN_TAG"),
+        base_url=_env("FUN_BASE_URL") or DEFAULT_BASE,
+        bark_url=n["bark_url"],
+        bark_key=n["bark_key"],
+        bark_server=(n["bark_server"] or DEFAULT_BARK).rstrip("/"),
+        bark_group=n["bark_group"] or "FUN矿池",
+        bark_sound=n["bark_sound"],
+        device_cache=_env("FUN_DEVICE_CACHE"),
+        captcha=_env("FUN_CAPTCHA") or _env("FUN_SMS"),
+        source="env",
+    )
+
+
+def load_config_yaml(path: Path) -> AppConfig:
+    try:
+        import yaml
+    except ImportError as e:
+        raise ImportError("本地 yaml 配置需要 PyYAML：pip install PyYAML") from e
+
+    if not path.is_file():
+        raise FileNotFoundError(f"配置文件不存在: {path}")
+
+    with path.open("r", encoding="utf-8") as f:
+        raw: dict[str, Any] = yaml.safe_load(f) or {}
+
+    accounts: list[Account] = []
+    for i, item in enumerate(raw.get("accounts") or []):
+        if not isinstance(item, dict):
+            raise ValueError(f"accounts[{i}] 格式错误")
+        mobile = str(item.get("mobile") or item.get("phone") or "").strip()
+        password = str(item.get("password") or item.get("pwd") or item.get("pass") or "")
+        note = str(item.get("name") or item.get("note") or "").strip()
+        captcha = str(item.get("captcha") or item.get("sms") or "").strip()
+        if not mobile or not password:
+            raise ValueError(f"accounts[{i}] 需要 mobile/phone + password")
+        claim = item.get("claim", item.get("do_claim", True))
+        upgrade = item.get("upgrade", item.get("do_upgrade", False))
+        accounts.append(
+            Account(
+                mobile=mobile,
+                password=password,
+                do_claim=_as_bool(claim, True),
+                do_upgrade=_as_bool(upgrade, False),
+                note=note,
+                captcha=captcha,
+            )
+        )
+
+    if not accounts:
+        raise ValueError(f"{path} 中 accounts 为空")
+
+    n = raw.get("notify") or {}
+    env_n = _notify_from_env()
+    bark_url = env_n["bark_url"] or str(n.get("bark_url") or "")
+    bark_key = env_n["bark_key"] or str(n.get("bark_key") or "")
+    if bark_url and not bark_url.startswith("http"):
+        bark_key = bark_key or bark_url
+        bark_url = ""
+    bark_server = (
+        env_n["bark_server"]
+        if (env_n["bark_url"] or env_n["bark_key"])
+        else str(n.get("bark_server") or DEFAULT_BARK)
+    ).rstrip("/")
+    bark_group = env_n["bark_group"] or str(n.get("bark_group") or "FUN矿池")
+    bark_sound = env_n["bark_sound"] or str(n.get("bark_sound") or "")
+
+    return AppConfig(
+        accounts=accounts,
+        note=_env("FUN_NOTE") or _env("FUN_TAG") or str(raw.get("note") or raw.get("tag") or ""),
+        base_url=_env("FUN_BASE_URL") or str(raw.get("base_url") or DEFAULT_BASE),
+        bark_url=bark_url,
+        bark_key=bark_key,
+        bark_server=bark_server or DEFAULT_BARK,
+        bark_group=bark_group or "FUN矿池",
+        bark_sound=bark_sound,
+        device_cache=_env("FUN_DEVICE_CACHE") or str(raw.get("device_cache") or ""),
+        captcha=_env("FUN_CAPTCHA") or _env("FUN_SMS") or str(raw.get("captcha") or ""),
+        source=str(path),
+    )
+
+
+def resolve_config(args: argparse.Namespace) -> AppConfig:
+    if args.config:
+        return load_config_yaml(Path(args.config))
+
+    env_cfg = load_config_from_env()
+    local = SCRIPT_DIR / "config.yaml"
+    if env_cfg is not None:
+        if local.is_file():
+            log("📦 已用环境变量 FUN，本地 config.yaml 不会被读取")
+        return env_cfg
+    if local.is_file():
+        return load_config_yaml(local)
+    raise FileNotFoundError(
+        "未找到账号配置。青龙请设环境变量 FUN；"
+        f"本地请 cp config.example.yaml config.yaml 后填写，或 python3 mine.py -c 路径"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Bark
 # ---------------------------------------------------------------------------
 
-def bark_endpoint() -> Optional[str]:
-    url = _env("BARK_URL") or _env("BARK_PUSH")
-    key = _env("BARK_KEY") or _env("BARK_DEVICE_KEY")
+def bark_endpoint(cfg: Optional[AppConfig] = None) -> Optional[str]:
+    cfg = cfg or _ACTIVE_CFG
+    url = (cfg.bark_url if cfg else "") or _env("BARK_URL") or _env("BARK_PUSH")
+    key = (cfg.bark_key if cfg else "") or _env("BARK_KEY") or _env("BARK_DEVICE_KEY")
     if url and not url.startswith("http"):
         key = key or url
         url = ""
     if url:
         return url.rstrip("/")
     if key:
-        server = (_env("BARK_SERVER") or DEFAULT_BARK).rstrip("/")
+        server = (
+            (cfg.bark_server if cfg else "") or _env("BARK_SERVER") or DEFAULT_BARK
+        ).rstrip("/")
         return f"{server}/{key}"
     return None
 
 
-def send_bark(title: str, body: str) -> None:
-    ep = bark_endpoint()
+def send_bark(title: str, body: str, cfg: Optional[AppConfig] = None) -> None:
+    cfg = cfg or _ACTIVE_CFG
+    ep = bark_endpoint(cfg)
     if not ep:
         log("📣 未配置 BARK_URL/BARK_KEY，跳过推送")
         return
     if not ep.startswith("http"):
         ep = f"{DEFAULT_BARK.rstrip('/')}/{ep}"
-    group = _env("BARK_GROUP") or "FUN矿池"
+    group = (cfg.bark_group if cfg else "") or _env("BARK_GROUP") or "FUN矿池"
     payload: dict[str, Any] = {
         "title": title[:200],
         "body": body[:3500],
         "group": group,
     }
-    if _env("BARK_SOUND"):
-        payload["sound"] = _env("BARK_SOUND")
+    sound = (cfg.bark_sound if cfg else "") or _env("BARK_SOUND")
+    if sound:
+        payload["sound"] = sound
     try:
         r = requests.post(ep, json=payload, timeout=15)
         if r.status_code >= 400:
@@ -324,10 +519,9 @@ class FunClient:
             log(f"   ⚠️ {msg}")
             log("   平台已向该手机号发送短信。请按下面做完绑定：")
             log("   1. 查收短信验证码")
-            log("   2. 青龙新增环境变量 FUN_CAPTCHA=验证码")
-            log("      （或把验证码写到 FUN 第 6 段：手机#密码#1#0#备注#验证码）")
-            log("   3. 立刻再运行本任务一次（验证码很快过期）")
-            log("   4. 看到「设备已绑定」后，删掉 FUN_CAPTCHA，之后定时不再要验证码")
+            log(f"   2. {captcha_hint()}")
+            log("   3. 立刻再运行一次（验证码很快过期）")
+            log("   4. 看到「设备已绑定」后，删掉验证码，之后定时不再要")
             if captcha:
                 log("   ℹ️ 本轮已提交验证码，但仍被判定为新设备，请换最新一条短信再试")
                 return False, "验证码未通过（仍是新设备）"
@@ -336,7 +530,7 @@ class FunClient:
         if code != 1:
             log(f"   ❌ 登录失败: {msg}")
             if "验证码" in msg:
-                log("   请用最新一条短信填 FUN_CAPTCHA 后马上再跑")
+                log(f"   请用最新一条短信：{captcha_hint()}")
             return False, msg
 
         ui = (ret.get("data") or {}).get("userinfo") or {}
@@ -364,6 +558,23 @@ class FunClient:
             return None
         if d.get("code") != 1:
             log(f"   ❌ 查询矿机失败: {d.get('msg')}")
+            return None
+        return d.get("data") or {}
+
+    def eco_overview(self) -> Optional[dict[str, Any]]:
+        """矿池页「余额」来自生态账户，不是现货钱包。"""
+        try:
+            r = self.session.get(
+                f"{self.base}/eco/overview",
+                headers=self._headers(),
+                timeout=self.timeout,
+            )
+            d = r.json()
+        except Exception as e:
+            log(f"   ❌ 查询生态账户异常: {e}")
+            return None
+        if d.get("code") != 1:
+            log(f"   ❌ 查询生态账户失败: {d.get('msg')}")
             return None
         return d.get("data") or {}
 
@@ -410,7 +621,33 @@ def _fnum(v: Any) -> str:
         return str(v)
 
 
-def run_account(acc: Account, base_url: str) -> dict[str, Any]:
+def _as_float(v: Any) -> Optional[float]:
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def apply_mine_info(res: dict[str, Any], info: dict[str, Any]) -> None:
+    res["level"] = info.get("current_level")
+    res["claimable"] = info.get("claimable_fu")
+    res["upgrade_cost"] = info.get("next_upgrade_cost_fu")
+    res["daily_income"] = info.get("decayed_daily_income_fu") or info.get("daily_income_fu")
+    res["total_earned"] = info.get("total_earned_fu")
+
+
+def apply_eco(res: dict[str, Any], client: FunClient) -> None:
+    data = client.eco_overview()
+    if not data:
+        return
+    res["balance"] = data.get("fu_available")
+    res["balance_freeze"] = data.get("fu_freeze")
+    res["hashrate"] = data.get("hashrate_available") or data.get("hashrate_total")
+
+
+def run_account(acc: Account, cfg: AppConfig) -> dict[str, Any]:
     res: dict[str, Any] = {
         "label": acc.label,
         "mobile": mask_mobile(acc.mobile),
@@ -421,6 +658,11 @@ def run_account(acc: Account, base_url: str) -> dict[str, Any]:
         "level": None,
         "claimable": None,
         "upgrade_cost": None,
+        "balance": None,
+        "balance_freeze": None,
+        "hashrate": None,
+        "daily_income": None,
+        "total_earned": None,
         "errors": [],
     }
     log("")
@@ -436,11 +678,11 @@ def run_account(acc: Account, base_url: str) -> dict[str, Any]:
         f"{' 已绑定' if bound else ' 未绑定'}")
     log(f"   💾 缓存: {cache_path}")
 
-    captcha = resolve_captcha(acc)
+    captcha = resolve_captcha(acc, cfg)
     if captcha:
         log("   🔑 本轮将提交短信验证码")
 
-    client = FunClient(base_url, device_id)
+    client = FunClient(cfg.base_url, device_id)
     ok, msg = client.login(acc.mobile, acc.password, captcha)
     if not ok:
         res["errors"].append(msg if msg and msg != "登录失败" else "登录失败")
@@ -448,9 +690,10 @@ def run_account(acc: Account, base_url: str) -> dict[str, Any]:
 
     mark_device_bound(acc.mobile, device_id, cache)
     if captcha:
-        log("   📌 设备已绑定。请删掉 FUN_CAPTCHA / 账号第 6 段验证码，避免下次误用过期码")
+        log("   📌 设备已绑定。请删掉验证码（FUN_CAPTCHA / config.yaml captcha / 账号第 6 段），避免下次误用过期码")
     elif created:
-        log("   📌 设备已写入缓存，之后请保留该文件（订阅更新不会覆盖 /ql/data）")
+        where = "/ql/data" if running_on_qinglong() else str(SCRIPT_DIR)
+        log(f"   📌 设备已写入缓存，请保留该文件（{where}）")
 
     time.sleep(0.8)
 
@@ -471,18 +714,23 @@ def run_account(acc: Account, base_url: str) -> dict[str, Any]:
         res["claim"] = {"ok": None, "msg": "已关闭"}
         log("   ⏭️ 跳过收矿")
 
-    # 2 查状态
+    # 2 查状态（矿机 + 钱包余额）
     info = client.mine_info()
     if info is not None:
-        res["level"] = info.get("current_level")
-        res["claimable"] = info.get("claimable_fu")
-        res["upgrade_cost"] = info.get("next_upgrade_cost_fu")
+        apply_mine_info(res, info)
         log(
             f"   ⛏️ 等级 LV{res['level']} | 可领 {_fnum(res['claimable'])} | "
-            f"升级费 {_fnum(res['upgrade_cost'])}"
+            f"日产 {_fnum(res['daily_income'])} | 升级费 {_fnum(res['upgrade_cost'])}"
         )
     else:
         res["errors"].append("查询矿机失败")
+    apply_eco(res, client)
+    if res.get("balance") is not None:
+        freeze = _as_float(res.get("balance_freeze")) or 0.0
+        extra = f" | 冻结 {_fnum(res['balance_freeze'])}" if freeze > 0 else ""
+        hr = res.get("hashrate")
+        hr_s = f" | 算力 {_fnum(hr)}" if hr is not None else ""
+        log(f"   💰 余额 {_fnum(res['balance'])} FU{extra}{hr_s}")
     time.sleep(1.0)
 
     # 3 升级
@@ -495,12 +743,13 @@ def run_account(acc: Account, base_url: str) -> dict[str, Any]:
             time.sleep(1.0)
             info2 = client.mine_info()
             if info2:
-                res["level"] = info2.get("current_level")
-                res["claimable"] = info2.get("claimable_fu")
-                res["upgrade_cost"] = info2.get("next_upgrade_cost_fu")
+                apply_mine_info(res, info2)
                 log(
                     f"   ⛏️ 升级后 LV{res['level']} | 可领 {_fnum(res['claimable'])}"
                 )
+            apply_eco(res, client)
+            if res.get("balance") is not None:
+                log(f"   💰 余额 {_fnum(res['balance'])} FU")
         else:
             log(f"   ℹ️ 升级: {msg}")
             # 余额不足等不算严重
@@ -574,8 +823,17 @@ def build_bark(results: list[dict[str, Any]], note: str) -> tuple[str, str]:
             lv = r.get("level")
             claimable = _fnum(r.get("claimable"))
             cost = _fnum(r.get("upgrade_cost"))
+            bal = r.get("balance")
+            freeze = _as_float(r.get("balance_freeze")) or 0.0
             lines.append(f"   🏭 矿机：LV{lv if lv is not None else '?'}")
+            if bal is not None:
+                lines.append(f"   💰 余额：{_fnum(bal)} FU")
+                if freeze > 0:
+                    lines.append(f"   🧊 冻结：{_fnum(r.get('balance_freeze'))} FU")
             lines.append(f"   💎 可领：{claimable}")
+            daily = r.get("daily_income")
+            if daily is not None:
+                lines.append(f"   📈 日产：{_fnum(daily)}")
             lines.append(f"   ⬆️ 升级费：{cost}")
 
             cl = r.get("claim") or {}
@@ -603,7 +861,7 @@ def build_bark(results: list[dict[str, Any]], note: str) -> tuple[str, str]:
     if fail_n == 0:
         lines.append("🎉 全部顺利")
     elif _all_need_sms(results):
-        lines.append("📱 新设备：设 FUN_CAPTCHA 后立刻再跑一次")
+        lines.append("📱 新设备：填验证码后立刻再跑一次")
     elif ok_n == 0:
         lines.append("😿 请检查账号密码 / 网络 / 短信验证码")
     else:
@@ -612,38 +870,63 @@ def build_bark(results: list[dict[str, Any]], note: str) -> tuple[str, str]:
     return title, "\n".join(lines)
 
 
-def main() -> int:
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="FUN 矿池：登录 / 收矿 / 可选升级（本地 yaml 或青龙环境变量）")
+    p.add_argument(
+        "-c",
+        "--config",
+        default="",
+        help="本地 config.yaml 路径（默认 ./config.yaml；未指定且无 FUN 时自动读取）",
+    )
+    p.add_argument(
+        "--captcha",
+        default="",
+        help="本轮短信验证码（仅首次新设备绑定；成功后不要再传）",
+    )
+    return p.parse_args(argv)
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    global _ACTIVE_CFG
+    args = parse_args(argv)
     log("🚀 FUN 矿池 mine.py")
-    note = _env("FUN_NOTE") or _env("FUN_TAG")
-    if note:
-        log(f"🏷️ 全局备注: {note}")
-    if bark_endpoint():
-        log("📣 Bark 已配置")
-    else:
-        log("📣 未配置 BARK_URL/BARK_KEY")
+    log(f"🖥️ 运行环境: {'青龙' if running_on_qinglong() else '本地'}")
 
-    base = _env("FUN_BASE_URL") or DEFAULT_BASE
-    log(f"🌐 API: {base}")
-    log(f"💾 设备缓存: {resolve_device_cache_path()}")
-
-    accounts = parse_accounts(_env("FUN"))
-    if not accounts:
-        log("❌ 未配置 FUN")
-        log("   格式: 手机号#密码#收矿#升级[#备注][#验证码]")
-        log("   例: 13800138000#pass#1#0#iPhone")
-        log("   多账号用 & 或换行")
-        send_bark(f"FUN矿池 ❌" + (f" · {note}" if note else ""), "❌ 未配置环境变量 FUN")
+    try:
+        cfg = resolve_config(args)
+    except Exception as e:
+        log(f"❌ {e}")
+        log("   青龙：FUN=手机号#密码#收矿#升级[#备注][#验证码]")
+        log("   本地：cp config.example.yaml config.yaml 后填写")
+        send_bark("FUN矿池 ❌", f"❌ 未配置账号\n{e}")
         return 1
 
-    if _env("FUN_CAPTCHA") or _env("FUN_SMS"):
-        log("🔑 已配置 FUN_CAPTCHA / FUN_SMS（绑定成功后请删除）")
+    if args.captcha.strip():
+        cfg.captcha = args.captcha.strip()
 
+    _ACTIVE_CFG = cfg
+
+    if cfg.note:
+        log(f"🏷️ 全局备注: {cfg.note}")
+    log(f"📄 配置来源: {cfg.source or '?'}")
+    if bark_endpoint(cfg):
+        log("📣 Bark 已配置")
+    else:
+        log("📣 未配置 BARK_URL/BARK_KEY（本地可写在 config.yaml 的 notify）")
+
+    log(f"🌐 API: {cfg.base_url}")
+    log(f"💾 设备缓存: {resolve_device_cache_path()}")
+
+    if cfg.captcha or any(a.captcha for a in cfg.accounts):
+        log("🔑 已配置验证码（绑定成功后请删除）")
+
+    accounts = cfg.accounts
     log(f"📋 共 {len(accounts)} 个账号")
     results: list[dict[str, Any]] = []
     for i, acc in enumerate(accounts, 1):
         log(f"\n▶ [{i}/{len(accounts)}]")
         try:
-            results.append(run_account(acc, base))
+            results.append(run_account(acc, cfg))
         except Exception as e:
             log(f"   ❌ 异常: {e}")
             results.append(
@@ -658,10 +941,10 @@ def main() -> int:
         if i < len(accounts):
             time.sleep(2.0)
 
-    title, body = build_bark(results, note)
+    title, body = build_bark(results, cfg.note)
     log("")
     log(body)
-    send_bark(title, body)
+    send_bark(title, body, cfg)
     log("\n🏁 全部完成")
     fail = sum(1 for r in results if not r.get("ok"))
     return 1 if fail else 0

@@ -1,0 +1,36 @@
+# 华住会自动签到配置示例
+# 复制为 config.yaml 后填入实际配置即可
+
+# 账号列表（支持单账号或多账号）
+accounts:
+  - name: "主号"
+    # userToken：App 或小程序抓包获得的 userToken 值
+    # 支持纯 token 字符串、或类似 'userToken=xxxx' 格式、或完整 Cookie 字符串
+    token: "your_user_token_here"
+
+  # - name: "小号"
+  #   token: "second_user_token_here"
+
+# 定时与执行参数
+run_at: "08:30"         # 常驻模式 (--loop) 下每天执行时间 (HH:MM)
+random_delay: 0         # 触发后随机延迟秒数上限 (0 为关闭)，用于错峰避免 429 限流
+retry_times: 3          # 遇到 429/5xx/网络异常时的重试次数
+retry_delay: 30         # 重试基础间隔秒数 (按次数递增)
+timeout: 20             # 请求超时时间 (秒)
+inter_account_delay: 3  # 多账号之间的执行间隔 (秒)
+token_file: ""          # 可选：token 本地持久化文件，开启后若服务端下发新 token 会自动滑动续期更新
+
+# 通知配置（可选）
+# 与仓库中其它脚本（kuailefeng / fun 等）兼容
+bark:
+  url: ""               # 完整 Bark URL，例如 https://api.day.app/your_key
+  key: ""               # 或仅填 Bark 设备 Key
+  server: "https://api.day.app"
+  group: "华住会签到"
+  sound: ""             # 提示音，例如 minuet
+  icon: ""              # 自定义通知图标 URL
+  level: ""             # 通知中断级别，例如 active / timeSensitive
+
+pushplus:
+  token: ""             # PushPlus 微信推送 Token
+  topic: ""             # 群组编码（可选）

@@ -7,10 +7,11 @@ cron: 0 9 * * *
 new Env('快乐蜂抽奖');
 
 流程：
-  1. 手机号 + 密码登录（密码 RSA 加密）获取 z-token 与 Cookie
-  2. 请求 /v1/turntables/free 三次（默认间隔随机 5–8 秒）
-  3. 循环：GET /v1/turntables/check 取 idHash（必要时 /ad）→ POST /v1/turntables/{idHash}
-     （每轮间隔随机 5–8 秒，按 /check 自适应到用完）
+  1. 手机号 + 密码登录（密码 RSA 加密）获取 token 与 Cookie（无需反复抓包）
+  2. 业务头与 快乐蜂.js 对齐：z-token=Bearer <jwt> + App 设备头；z-client 先 1，401 再切 2
+  3. 请求 /v1/turntables/free 三次（默认间隔随机 5–8 秒）
+  4. 广告抽奖优先 POST /ad（JS 密文）→ POST /v1/turntables/{idHash}；
+     密码登录 token 不吃密文时回退 GET /check 自适应到用完
 
 青龙环境变量（账号）：
   KLF_ACCOUNTS  推荐。JSON 数组
@@ -82,11 +83,14 @@ AD_PATH = "/v1/turntables/ad"
 CHECK_PATH = "/v1/turntables/check"
 CONFIG_PATH = "/v1/turntables/config"
 
-# free / turn 接口沿用原 JS 固定密文
-# 密码登录（z-client=2 + Bearer JWT）下，广告抽奖应走 GET /check 取 idHash，
-# 不要再硬编码 POST /ad 的 advertisementId/stepId（错误参数会直接 5000 系统异常）
+# free / turn / ad 沿用原 快乐蜂.js 固定密文
+# 密码登录拿到的是 H5 JWT：业务请求必须 z-token=Bearer <jwt>
+# App 抓包 klekey 同样带 Bearer（与已跑通的 JS 一致）
+# z-client：先按 JS 用 1；密码登录 token 会 401，再自动切到 2
+# 密码登录下 /ad 密文会 PARAMETER_PARSE_EXCEPTION(5001)，回退 GET /check
 FREE_BODY = "GCTkzi72o4/SXui0WOkH3Q=="
 TURN_BODY = FREE_BODY
+AD_BODY = "oTsfhQ1rlHJLiKvNQwcTSn7txy+ryqMmXy3xgPc4N0igUN7X2AbLfJqz8QUPmkI+"
 DEFAULT_ADVERTISEMENT_ID = 1
 DEFAULT_STEP_ID = 110
 
@@ -613,9 +617,11 @@ class KlfClient:
         self.timeout = timeout
         # auto | raw | bearer；resolve 后写入 _resolved_token_style
         self.token_style_pref = (token_style or "auto").lower()
-        self._resolved_token_style = "raw"
+        self._resolved_token_style = "bearer"
         # password | klekey | cache
         self.auth_source = "klekey"
+        # 与 快乐蜂.js 一致，先走 App 端 z-client=1
+        self.z_client = "1"
         self.session = requests.Session()
         self.token = account.z_token
         self.refresh_token = ""
@@ -631,14 +637,11 @@ class KlfClient:
         pref = self.token_style_pref
         if pref in ("raw", "bearer"):
             return pref
-        # auto：密码登录走 H5 的 Bearer；App 抓包 klekey 走裸 token
-        if self.auth_source == "password":
-            return "bearer"
-        # 缓存若未记录来源：JWT(eyJ...) 基本是密码/H5 登录产物，用 Bearer
+        # auto：JWT 一律 Bearer（与已跑通的 JS klekey 一致）；其它裸 token
         tok = self._normalize_token(self.token)
-        if tok.startswith("eyJ") and self.account.has_password():
+        if tok.startswith("eyJ"):
             return "bearer"
-        if tok.startswith("eyJ") and self.auth_source in ("cache", "password"):
+        if self.auth_source == "password":
             return "bearer"
         return "raw"
 
@@ -662,52 +665,26 @@ class KlfClient:
         }
 
     def _api_headers(self) -> dict[str, str]:
-        """业务接口请求头。
+        """业务接口请求头，与 快乐蜂.js 对齐。
 
-        密码登录 JWT 必须：
-          - z-client=2
-          - z-token=Bearer <jwt>
-          - 同时带上 App 设备头（z-device / z-os / z-version=1.1.9 等）
-        缺设备头时服务端常返回 code=5000「系统异常」。
-
-        App 抓包 klekey：z-client=1 + 裸 token。
+        - 设备头：z-device / z-os / z-version=1.1.9 等（缺了常 5000）
+        - z-token：JWT 用 Bearer <jwt>（密码登录与已跑通的 JS 都是这样）
+        - z-client：默认 1（JS）；密码登录 token 配 1 会 401，自动切 2
         """
-        style = self._resolved_token_style
-        use_bearer = style == "bearer" or self.auth_source == "password"
-
-        if use_bearer:
-            # 混合头：H5 鉴权 + App 设备信息（实测 free/ad 必需）
-            headers = {
-                "Host": "klf-api.lingdangshuo.com",
-                "Accept": "*/*",
-                "Accept-Language": "zh-Hans-CN;q=1",
-                "Content-Type": "application/json",
-                "User-Agent": APP_UA,
-                "Connection": "keep-alive",
-                "z-client": "2",
-                "z-version": "1.1.9",
-                "z-os": "2",
-                "z-os-version": "26.5",
-                "z-store": "1",
-                "z-device": "209076",
-            }
-        else:
-            # 原 JS App 头（klekey）
-            headers = {
-                "Host": "klf-api.lingdangshuo.com",
-                "z-os-version": "26.5",
-                "z-store": "1",
-                "Accept": "*/*",
-                "Accept-Language": "zh-Hans-CN;q=1",
-                "z-client": "1",
-                "Content-Type": "application/json",
-                "User-Agent": APP_UA,
-                "Connection": "keep-alive",
-                "z-device": "209076",
-                "z-version": "1.1.9",
-                "z-os": "2",
-            }
-
+        headers = {
+            "Host": "klf-api.lingdangshuo.com",
+            "z-os-version": "26.5",
+            "z-store": "1",
+            "Accept": "*/*",
+            "Accept-Language": "zh-Hans-CN;q=1",
+            "z-client": str(self.z_client or "1"),
+            "Content-Type": "application/json",
+            "User-Agent": APP_UA,
+            "Connection": "keep-alive",
+            "z-device": "209076",
+            "z-version": "1.1.9",
+            "z-os": "2",
+        }
         if self.token:
             headers["z-token"] = self._z_token_header()
         cookie_str = "; ".join(
@@ -724,6 +701,7 @@ class KlfClient:
         url = f"{API_BASE}{LOGIN_PATH}"
         body = {"mobile": self.account.phone, "password": enc_pwd}
         logger.info("🔐 [%s] 登录中: %s", self.account.name, self.account.phone)
+        self.session.cookies.clear()
         resp = self.session.post(
             url,
             headers=self._login_headers(),
@@ -749,6 +727,8 @@ class KlfClient:
         self.expired = payload.get("expired")
         self.auth_source = "password"
         self._resolved_token_style = self._resolve_token_style()
+        # 先按 JS 走 z-client=1，业务请求 401 再切 2
+        self.z_client = "1"
         # session 已自动保存 acw_tc 等 cookie
         cookie_str = "; ".join(f"{k}={v}" for k, v in self.session.cookies.get_dict().items())
         logger.info(
@@ -788,6 +768,11 @@ class KlfClient:
             self._resolved_token_style = cached_style
         else:
             self._resolved_token_style = self._resolve_token_style()
+        cached_client = str(entry.get("z_client") or "").strip()
+        if cached_client in ("1", "2"):
+            self.z_client = cached_client
+        else:
+            self.z_client = "1"
         if cookie:
             for part in cookie.split(";"):
                 part = part.strip()
@@ -810,6 +795,7 @@ class KlfClient:
             "name": self.account.name,
             "auth_source": self.auth_source,
             "token_style": self._resolved_token_style,
+            "z_client": str(self.z_client or "1"),
             "ts": int(time.time()),
         }
 
@@ -819,6 +805,7 @@ class KlfClient:
             self.token = self._normalize_token(self.account.z_token)
             self.auth_source = "klekey"
             self._resolved_token_style = self._resolve_token_style()
+            self.z_client = "1"
             for part in self.account.cookie.split(";"):
                 part = part.strip()
                 if not part or "=" not in part:
@@ -826,11 +813,19 @@ class KlfClient:
                 k, v = part.split("=", 1)
                 self.session.cookies.set(k.strip(), v.strip())
             logger.info(
-                "🔑 [%s] 使用配置的 z-token + cookie，style=%s",
+                "🔑 [%s] 使用配置的 z-token + cookie，style=%s z-client=%s",
                 self.account.name,
                 self._resolved_token_style,
+                self.z_client,
             )
-            return
+            if self._align_z_client():
+                return
+            if not self.account.has_password():
+                raise RuntimeError("配置的 z-token + cookie 已失效，且未配置手机号密码")
+            logger.warning(
+                "⚠️ [%s] 配置的 token 鉴权失败，改用手机号密码登录",
+                self.account.name,
+            )
 
         # 2) 缓存
         entry = cache.get(self.account.cache_key())
@@ -840,15 +835,20 @@ class KlfClient:
                 self.account.name,
                 self._resolved_token_style,
                 self.auth_source,
-                self._api_headers().get("z-client"),
+                self.z_client,
             )
-            # 回写 style，避免旧缓存下次又判错
-            cache[self.account.cache_key()] = self.dump_auth_for_cache()
+            if self._align_z_client():
+                cache[self.account.cache_key()] = self.dump_auth_for_cache()
+                save_token_cache(cache)
+                return
+            logger.warning("⚠️ [%s] 缓存 token 失效，重新登录", self.account.name)
+            cache.pop(self.account.cache_key(), None)
             save_token_cache(cache)
-            return
 
         # 3) 密码登录
         self.login()
+        if not self._align_z_client():
+            raise RuntimeError("密码登录成功，但业务接口仍鉴权失败")
         cache[self.account.cache_key()] = self.dump_auth_for_cache()
         save_token_cache(cache)
 
@@ -866,19 +866,40 @@ class KlfClient:
         return False
 
     def _flip_token_style(self) -> bool:
-        """切换 raw/bearer（同时会切换 z-client 1/2），成功切换返回 True。"""
-        cur = self._resolved_token_style
-        nxt = "raw" if cur == "bearer" else "bearer"
+        """鉴权失败时切换 z-client 1/2（z-token 保持 Bearer），成功切换返回 True。"""
+        cur = str(self.z_client or "1")
+        nxt = "2" if cur == "1" else "1"
         if nxt == cur:
             return False
-        self._resolved_token_style = nxt
+        self.z_client = nxt
         logger.warning(
-            "[%s] 鉴权失败，切换 z-token 格式: %s -> %s（并切换 z-client）后重试",
+            "[%s] 鉴权失败，切换 z-client: %s -> %s 后重试（z-token 保持 %s）",
             self.account.name,
             cur,
             nxt,
+            self._resolved_token_style,
         )
         return True
+
+    def _align_z_client(self) -> bool:
+        """用 /check 探测当前 z-client；401 时翻转到可用值。
+
+        返回 True 表示当前 token+cookie 可用。
+        """
+        try:
+            status, data, _check = self.fetch_check()
+        except Exception as e:
+            logger.debug("[%s] z-client 探测失败: %s", self.account.name, e)
+            return False
+        logger.info(
+            "🧭 [%s] 鉴权探测 /check HTTP %s z-client=%s style=%s => %s",
+            self.account.name,
+            status,
+            self.z_client,
+            self._resolved_token_style,
+            _short(data, 160),
+        )
+        return not self._is_auth_error(status, data)
 
     def _do_post(
         self,
@@ -985,25 +1006,37 @@ class KlfClient:
         check = self._parse_check_payload(data) if isinstance(data, dict) and data.get("code") == CODE_OK else {}
         return status, data, check
 
+    @staticmethod
+    def _extract_id_hash(data: Any) -> Optional[str]:
+        if not isinstance(data, dict):
+            return None
+        body = data.get("data")
+        if isinstance(body, dict):
+            id_hash = body.get("idHash") or body.get("id_hash")
+            if id_hash:
+                return str(id_hash)
+        nested = KlfClient._parse_check_payload(data)
+        id_hash = nested.get("idHash") or nested.get("id_hash")
+        return str(id_hash) if id_hash else None
+
     def request_ad_id_hash(
         self,
         *,
-        advertisement_id: int,
-        step_id: int,
+        advertisement_id: int = DEFAULT_ADVERTISEMENT_ID,
+        step_id: int = DEFAULT_STEP_ID,
+        use_js_body: bool = True,
     ) -> tuple[int, Any, Optional[str]]:
-        """POST /ad 换 idHash（仅当 /check 给出 stepId 时使用）。"""
-        payload = {"advertisementId": advertisement_id, "stepId": step_id}
-        status, data = self._post_json(AD_PATH, payload)
-        id_hash = None
-        if isinstance(data, dict):
-            body = data.get("data")
-            if isinstance(body, dict):
-                id_hash = body.get("idHash") or body.get("id_hash")
-            # 有的版本把 check 嵌在 data.turntableCheck
-            if not id_hash:
-                nested = self._parse_check_payload(data)
-                id_hash = nested.get("idHash") or nested.get("id_hash")
-        return status, data, str(id_hash) if id_hash else None
+        """POST /ad 换 idHash。
+
+        默认与 快乐蜂.js 一样发固定密文；密码登录 token 会 5001，
+        再退回 JSON（advertisementId/stepId）或走 /check。
+        """
+        if use_js_body:
+            status, data = self._post_raw(AD_PATH, AD_BODY)
+        else:
+            payload = {"advertisementId": advertisement_id, "stepId": step_id}
+            status, data = self._post_json(AD_PATH, payload)
+        return status, data, self._extract_id_hash(data)
 
     def request_free(
         self,
@@ -1051,19 +1084,18 @@ class KlfClient:
         advertisement_id: int = DEFAULT_ADVERTISEMENT_ID,
         step_id: int = DEFAULT_STEP_ID,
     ) -> list[Any]:
-        """广告/剩余抽奖：按 GET /check 状态自适应，有次数才继续。
+        """广告/剩余抽奖。
 
-        正确流程（密码登录 / App 均可）：
+        优先走 快乐蜂.js 同款：POST /ad 密文 → POST /v1/turntables/{idHash}。
+        密码登录 token 的 /ad 密文会 5001，自动改走 GET /check：
           1) GET /v1/turntables/check
-          2) 若有 idHash → POST /v1/turntables/{idHash} 开奖
-          3) 若仅有 stepId → 再 POST /ad(advertisementId, stepId) 换 idHash
-          4) state=5 或明确「次数用完」→ 结束
+          2) 有 idHash → POST /v1/turntables/{idHash}
+          3) 仅有 stepId → POST /ad JSON 换 idHash
+          4) state=5 或「次数用完」→ 结束
 
         times:
-          - 0  ：抽到 /check 说今日用完为止（硬上限 AD_MAX_SAFETY）
+          - 0  ：抽到用完为止（硬上限 AD_MAX_SAFETY）
           - >0 ：最多抽 times 次，仍会在用完时提前结束
-
-        每轮间隔在 [interval_lo, interval_hi] 秒随机。
         """
         results: list[Any] = []
         consecutive_fail = 0
@@ -1072,6 +1104,7 @@ class KlfClient:
         success_draws = 0
         gift_ids: list[Any] = []
         i = 0
+        use_js_ad: Optional[bool] = None
 
         if interval_lo == interval_hi:
             interval_desc = f"固定 {interval_lo:.0f}s"
@@ -1080,7 +1113,7 @@ class KlfClient:
         logger.info(
             "🎰 [%s] 广告抽奖模式: %s（上限 %s，间隔 %s）",
             self.account.name,
-            "按 /check 自适应至用完" if adaptive else f"最多 {max_rounds} 次",
+            "JS /ad 密文，失败则 /check 自适应" if adaptive else f"最多 {max_rounds} 次",
             max_rounds,
             interval_desc,
         )
@@ -1089,16 +1122,59 @@ class KlfClient:
             i += 1
             cap_label = "∞" if adaptive else str(max_rounds)
             logger.info("🔄 ========== 抽奖循环 %s/%s ==========", i, cap_label)
-            status, raw_check, check = self.fetch_check()
-            logger.info("🔎 [%s] /check HTTP %s => %s", i, status, _short(raw_check))
 
-            if isinstance(raw_check, dict) and raw_check.get("code") in (401, 1004, 1049, 1060):
-                raise AuthExpiredError(f"/check 鉴权失败: {raw_check}")
+            raw_check: Any = {}
+            check: dict[str, Any] = {}
+            state = None
+            message = ""
+            id_hash = None
+            check_step_id = None
 
-            state = check.get("state")
-            message = str(check.get("message") or "")
-            id_hash = check.get("idHash") or check.get("id_hash")
-            check_step_id = check.get("stepId")
+            # 未判定模式或已确认 JS /ad 密文可用：先打 /ad
+            if use_js_ad is not False:
+                logger.info("📺 [%s] POST /ad（快乐蜂.js 密文）", i)
+                ad_status, ad_data, id_hash = self.request_ad_id_hash(use_js_body=True)
+                logger.info("📺 [%s] /ad HTTP %s => %s", i, ad_status, _short(ad_data))
+                if isinstance(ad_data, dict) and ad_data.get("code") in (401, 1004, 1049, 1060):
+                    raise AuthExpiredError(f"/ad 鉴权失败: {ad_data}")
+                ad_code = ad_data.get("code") if isinstance(ad_data, dict) else None
+                if id_hash:
+                    use_js_ad = True
+                    results.append({"step": "ad_js", "data": ad_data, "idHash": id_hash})
+                elif ad_code == 5001 or (
+                    ad_code == CODE_SYS_ERR and str(ad_data.get("data") or "") == "PARAMETER_PARSE_EXCEPTION"
+                ):
+                    logger.info(
+                        "↪️ [%s] /ad 密文不被当前 token 接受（code=%s），改走 /check",
+                        i,
+                        ad_code,
+                    )
+                    use_js_ad = False
+                elif ad_code == CODE_SYS_ERR:
+                    logger.info("😴 [%s] /ad 返回 5000，视为今日次数用完", i)
+                    results.append({"step": "ad_js", "exhausted": True, "data": ad_data})
+                    break
+                else:
+                    consecutive_fail += 1
+                    results.append({"step": "ad_js", "data": ad_data, "idHash": None})
+                    if consecutive_fail >= 3:
+                        logger.warning("⚠️ [%s] 连续无法获取 idHash，停止广告抽奖", i)
+                        break
+                    if i < max_rounds:
+                        sleep_random(interval_lo, interval_hi, label="广告抽奖")
+                    continue
+
+            if use_js_ad is False and not id_hash:
+                status, raw_check, check = self.fetch_check()
+                logger.info("🔎 [%s] /check HTTP %s => %s", i, status, _short(raw_check))
+
+                if isinstance(raw_check, dict) and raw_check.get("code") in (401, 1004, 1049, 1060):
+                    raise AuthExpiredError(f"/check 鉴权失败: {raw_check}")
+
+                state = check.get("state")
+                message = str(check.get("message") or "")
+                id_hash = check.get("idHash") or check.get("id_hash")
+                check_step_id = check.get("stepId")
 
             if state == CHECK_STATE_EXHAUSTED or (
                 not id_hash and ("用完" in message or "明天" in message)
@@ -1128,6 +1204,7 @@ class KlfClient:
                 ad_status, ad_data, id_hash = self.request_ad_id_hash(
                     advertisement_id=advertisement_id,
                     step_id=sid,
+                    use_js_body=False,
                 )
                 logger.info("📺 [%s] /ad HTTP %s => %s", i, ad_status, _short(ad_data))
                 if isinstance(ad_data, dict) and ad_data.get("code") in (401, 1004, 1049, 1060):
@@ -1153,6 +1230,7 @@ class KlfClient:
                     ad_status, ad_data, id_hash = self.request_ad_id_hash(
                         advertisement_id=advertisement_id,
                         step_id=step_id,
+                        use_js_body=False,
                     )
                     logger.info("📺 [%s] /ad HTTP %s => %s", i, ad_status, _short(ad_data))
                     results.append({"step": "ad_fallback", "data": ad_data, "idHash": id_hash})
@@ -1327,7 +1405,7 @@ def run_account(account: Account, cfg: AppConfig, cache: dict[str, Any]) -> dict
         summary["free_ok"] = _count_free_ok(free_results)
 
         ad_mode = (
-            "按 /check 自适应至用完"
+            "JS /ad 密文，失败则 /check 自适应"
             if cfg.ad_times <= 0
             else f"最多 {cfg.ad_times} 次"
         )
@@ -1363,6 +1441,8 @@ def run_account(account: Account, cfg: AppConfig, cache: dict[str, Any]) -> dict
         save_token_cache(cache)
         try:
             client.login()
+            if not client._align_z_client():
+                raise RuntimeError("重登后业务接口仍鉴权失败")
             cache[account.cache_key()] = client.dump_auth_for_cache()
             save_token_cache(cache)
             _do_draw()

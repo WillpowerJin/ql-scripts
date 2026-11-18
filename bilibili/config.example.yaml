@@ -1,16 +1,15 @@
 # cp config.example.yaml config.yaml 后填写（config.yaml 勿提交）
 
 accounts:
-  # 方式 A（推荐，无需抓包）：填用户名/密码，首次运行用 --qr 扫码拿 Cookie；
-  # 之后 Cookie 失效再用 --qr 刷新。纯账密会撞极验，多数环境过不去。
+  # 推荐：不填 cookie，先跑 get_cookie.py 扫码；daily.py 会读缓存。
+  # 或从浏览器复制 SESSDATA + bili_jct（可选 DedeUserID）。
   - name: "主号"
-    username: ""          # 手机号 / 邮箱 / UID
-    password: ""
-    # 方式 B：浏览器已登录 bilibili.com，F12 → Application → Cookies 复制
-    # 至少需要 SESSDATA 与 bili_jct（可选 DedeUserID）
     cookie: ""
-    # 方式 C：扫码登录后脚本写入的 access_token（一般不用手填）
+    # 扫码成功后脚本会写入 access_token，一般不用手填
     access_token: ""
+    # 账密会撞极验，不推荐
+    username: ""
+    password: ""
 
   # 多账号示例
   # - name: "号2"

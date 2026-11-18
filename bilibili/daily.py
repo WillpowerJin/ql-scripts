@@ -6,9 +6,9 @@ B 站每日任务（登录/观看/分享/投币/银瓜子兑硬币/大会员部�
 cron: 30 7 * * *
 new Env('B站每日任务');
 
-凭据（任选其一，无需 App 抓包）：
-  1) 扫码：python daily.py --qr
-  2) Cookie：SESSDATA + bili_jct（浏览器复制）
+凭据（任选其一）：
+  1) 扫码：python3 -u get_cookie.py（推荐，与 daily 共用缓存）
+  2) Cookie：SESSDATA + bili_jct（浏览器复制或 BILI_COOKIE）
   3) 账密：username + password（多数环境会被极验拦住）
 
 青龙环境变量：
@@ -1678,6 +1678,13 @@ class BiliClient:
                 missing.append(f"投币({coins_exp // 10}/{target_coins})")
             lines.append("🏁 完成度：主站未完成 ⚠️  缺 " + "、".join(missing))
 
+        money1 = money0
+        if self.me():
+            money1 = int(self.user.get("money") or 0)
+        delta = money1 - money0
+        delta_s = f"+{delta}" if delta > 0 else str(delta)
+        lines.append(f"💰 硬币 {money0} → {money1}（{delta_s}）")
+
         result["ok"] = True
         result["core_done"] = core_done
         result["lines"] = lines
@@ -1763,9 +1770,28 @@ def main() -> int:
         action="store_true",
         help="尝试用户名密码登录（常被极验拦截）",
     )
-    ap.add_argument("--info-only", action="store_true", help="只查用户信息")
+    ap.add_argument("--info-only", action="store_true", help="只查用户信息，不跑任务")
+    ap.add_argument("--list", action="store_true", help="列出 Cookie 缓存中的账号后退出")
+    ap.add_argument("--no-notify", action="store_true", help="不推送 Bark（本地调试）")
     ap.add_argument("--coin", type=int, default=None, help="覆盖投币次数 0-5")
     args = ap.parse_args()
+
+    if args.list:
+        path = resolve_cache_path()
+        print(f"Cookie 缓存: {path}", flush=True)
+        cached = list_cached_accounts()
+        if not cached:
+            print("（空）请先: python3 -u get_cookie.py", flush=True)
+            return 1
+        for i, a in enumerate(cached, 1):
+            mid = _mid_from_cookie(a.cookie) if a.has_cookie() else "-"
+            print(
+                f"  {i}) {a.name}  mid={mid or '-'}  "
+                f"cookie={'有' if a.has_cookie() else '无'}  "
+                f"token={'有' if a.access_token else '无'}",
+                flush=True,
+            )
+        return 0
 
     cfg = load_config(args.config)
     if args.coin is not None:
@@ -1775,7 +1801,10 @@ def main() -> int:
 
     accounts = pick_accounts(cfg, args.account)
     if not accounts:
-        logger.error("无账号。请配置 config.yaml 或环境变量，或: python daily.py --qr")
+        logger.error(
+            "无账号。请先扫码: python3 -u get_cookie.py\n"
+            "或把浏览器 Cookie 写入 config.yaml / 环境变量 BILI_COOKIE"
+        )
         return 1
 
     summaries: list[str] = []
@@ -1783,7 +1812,10 @@ def main() -> int:
     need_cookie = False
 
     logger.info("Cookie 缓存路径: %s", resolve_cache_path())
-    if cfg.notify.has_bark():
+    skip_notify = args.no_notify or args.info_only
+    if skip_notify:
+        logger.info("通知: 本地调试跳过推送")
+    elif cfg.notify.has_bark():
         ep = _build_bark_endpoint(cfg.notify) or ""
         logger.info(
             "通知: Bark 已配置 → %s",
@@ -1835,7 +1867,6 @@ def main() -> int:
 
         res = client.run_daily(info_only=args.info_only)
         text = "\n".join(res.get("lines") or [])
-        print("\n" + text + "\n")
         summaries.append(text or f"{acc.name}: 无输出")
         if res.get("need_cookie"):
             need_cookie = True
@@ -1854,10 +1885,11 @@ def main() -> int:
         title = "B站每日任务 · 完成 ✅"
     print("=" * 40, flush=True)
     print(body, flush=True)
-    try:
-        send_notify(cfg.notify, title, body)
-    except Exception as e:
-        logger.warning("通知异常: %s", e)
+    if not skip_notify:
+        try:
+            send_notify(cfg.notify, title, body)
+        except Exception as e:
+            logger.warning("通知异常: %s", e)
     return 1 if any_fail else 0
 
 

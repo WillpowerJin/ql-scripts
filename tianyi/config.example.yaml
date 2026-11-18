@@ -1,0 +1,39 @@
+# 电信营业厅签到配置示例
+# 复制为 config.yaml 后填写实际信息（config.yaml 已在 .gitignore，不要提交）
+
+accounts:
+  - name: "主号"
+    # 电信营业厅登录手机号
+    phone: "13800000000"
+    # 服务密码（不是查询密码，也不是短信验证码）
+    password: "your_service_password"
+    # 16 位十六进制 AndroidID；首次登录必填，有缓存 Token 后可留空
+    android_id: "0123456789abcdef"
+
+  # - name: "小号"
+  #   phone: "13900000000"
+  #   password: "your_service_password"
+  #   android_id: "fedcba9876543210"
+
+# 执行参数
+timeout: 15              # 单次请求超时秒数
+live_rounds: 11          # 每个直播任务观看轮数（0 关闭直播任务）
+live_interval: 15        # 每轮观看间隔秒数（每账号约 live_rounds × live_interval 秒）
+feed_times: 10           # 宠物喂食次数上限
+inter_account_delay: 3   # 多账号之间的间隔秒数
+state_dir: ""            # 状态目录；留空默认脚本旁 state/，青龙默认 /ql/data/tianyi
+
+# 通知配置（可选）
+# 与仓库中其它脚本（kuailefeng / huazhu 等）兼容
+bark:
+  url: ""                # 完整 Bark URL，例如 https://api.day.app/your_key
+  key: ""                # 或仅填 Bark 设备 Key
+  server: "https://api.day.app"
+  group: "电信营业厅"
+  sound: ""              # 提示音，例如 minuet
+  icon: ""               # 自定义通知图标 URL
+  level: ""              # 通知中断级别，例如 active / timeSensitive
+
+pushplus:
+  token: ""              # PushPlus 微信推送 Token
+  topic: ""              # 群组编码（可选）

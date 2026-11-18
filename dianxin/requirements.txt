@@ -1,0 +1,5 @@
+requests
+pycryptodome
+certifi
+# 本地 yaml 配置才需要：
+# PyYAML
