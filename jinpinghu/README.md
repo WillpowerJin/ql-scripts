@@ -93,7 +93,7 @@ numpy
 | `JPH_LOTTERY_PHONE_MAP` | 按账号指定：`登录号=抽奖号,登录号=抽奖号` | 空 |
 | `JPH_OCR` | `cv2` / `ddddocr` / `remote` | cv2 |
 | `JPH_OCR_URL` | 外部 ddddocr 服务地址 | `http://127.0.0.1:7777` |
-| `JPH_SLIDE_RETRY` | 滑块最大尝试轮数 | 6 |
+| `JPH_SLIDE_RETRY` | 滑块最大尝试轮数 | 8 |
 | `JPH_READ_MS` | 强制阅读时长(毫秒)，`0`=每篇约 3 分钟 | 0 |
 | `JPH_USE_AUDIO_DURATION` | `1`=按该篇 `audio_duration` 计算 | 0 |
 | `JPH_REAL_WAIT` | 真实等待秒数上限 | 0 |
@@ -159,6 +159,13 @@ Content-Type: application/json
 
 多账号隔离：抽奖手机号在实例创建时按账号冻结，`ac_sub` 前硬校验手机号、登录态、
 `device_token`、滑块凭证都属于本账号；任何一项不符立即中止。
+
+## 变更记录
+
+- **2026-11-19 适配服务端改版**：`Access-Api-Dt` 改为每次从 `/api/aosbase/_auth_dt`
+  取服务端签发值（原始串 `[32:68]`），缓存 2 天；旧写死值会让 `task_done`
+  报 `1003 缺少参数或者参数异常`。滑块重试默认 6 → 8 轮；
+  滑块失败时汇总/通知会带出具体原因（识别依赖缺失 / 多次校验未通过）。
 
 ## 文件
 

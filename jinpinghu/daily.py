@@ -123,7 +123,7 @@ DEFAULT_BARK_SERVER = "https://api.day.app"
 DEFAULT_BARK_GROUP = "今平湖"
 DEFAULT_TIMEOUT = 25
 DEFAULT_THREADS = 3
-DEFAULT_SLIDE_RETRY = 6
+DEFAULT_SLIDE_RETRY = 8
 TOKEN_TTL = 100 * 86400  # access_token 实际约 115 天，100 天后主动刷新
 
 RSA_PUB = (
@@ -789,7 +789,9 @@ class JinpinghuClient:
         self.lines: list[str] = []
         self.summary: dict[str, Any] = {}
         self.afs_tokenid = ""
+        self.slide_fail_reason = ""
         self.slide_referer = REFERER
+        self.api_dt = ""  # 服务端签发的 Access-Api-Dt（_auth_dt 接口，写操作校验）
         self.owner_token: Optional[str] = None
         self.owner_uid: Optional[str] = None
 
@@ -894,6 +896,7 @@ class JinpinghuClient:
         self.cache_token()
         self.summary["login"] = "帐密登录"
         self.note(f"🔑 帐密登录成功  session={self.session_id[:10]}…")
+        self.ensure_api_dt()
 
     def vapp_post(self, path: str, data: Optional[dict[str, Any]] = None,
                   session_id: str = "", account_id: str = "") -> tuple[dict, str]:
@@ -918,14 +921,54 @@ class JinpinghuClient:
     def cache_token(self) -> None:
         with _STATE_LOCK:
             store = read_token_store(self.token_path)
-            store[self.phone] = {
+            entry = store.get(self.phone) or {}
+            if not isinstance(entry, dict):
+                entry = {}
+            entry.update({
                 "token": self.token,
                 "user_id": self.user_id,
                 "session_id": self.session_id,
                 "account_id": self.account_id,
                 "ts": int(time.time()),
-            }
+            })
+            store[self.phone] = entry
             write_token_store(self.token_path, store)
+
+    # ---------- 服务端设备凭证（Access-Api-Dt） ----------
+    def ensure_api_dt(self) -> None:
+        """获取/复用服务端签发的 Access-Api-Dt（_auth_dt 原始串取 [32:68]）。
+
+        App 端缓存 3 天；服务端改版（2026-11-18）后写操作会校验该头，
+        用旧写死值会报 1003「缺少参数或者参数异常」。"""
+        if self.api_dt:
+            return
+        store = read_token_store(self.token_path).get(self.phone) or {}
+        cached = store.get("api_dt") if isinstance(store, dict) else None
+        ts = int(store.get("api_dt_ts") or 0) if isinstance(store, dict) else 0
+        if cached and time.time() - ts < 2 * 86400:
+            self.api_dt = str(cached)
+            return
+        try:
+            r = self.session.get(
+                YA_BASE + "/api/aosbase/_auth_dt",
+                headers=self.biz_headers(), timeout=self.cfg.timeout,
+            )
+            raw = (jbody(r).get("data") or "")
+            if isinstance(raw, str) and len(raw) >= 68:
+                self.api_dt = raw[32:68]
+                with _STATE_LOCK:
+                    store2 = read_token_store(self.token_path)
+                    entry = store2.get(self.phone) or {}
+                    if isinstance(entry, dict):
+                        entry["api_dt"] = self.api_dt
+                        entry["api_dt_ts"] = int(time.time())
+                        store2[self.phone] = entry
+                        write_token_store(self.token_path, store2)
+                self.debug(f"_auth_dt 更新 Access-Api-Dt={self.api_dt[:8]}…")
+            else:
+                self.debug(f"_auth_dt 返回异常: {r.text[:120]}")
+        except Exception as e:
+            self.debug(f"_auth_dt {type(e).__name__}")
 
     def restore_token(self) -> bool:
         store = read_token_store(self.token_path).get(self.phone) or {}
@@ -942,6 +985,7 @@ class JinpinghuClient:
                 self.user_id = str(data["id"])
                 self.summary["login"] = "缓存登录态"
                 self.note("🔑 复用已缓存 access_token（免登录）")
+                self.ensure_api_dt()
                 return True
         except Exception:
             pass
@@ -960,7 +1004,9 @@ class JinpinghuClient:
             "Access-T-Id": T_ID,
             "Access-T-Id-In": T_ID,
             "Access-Api-Unique-Token": "1",
-            "Access-Api-Dt": DEVICE_DT,
+            # 必须服务端 _auth_dt 签发（取 [32:68]）；2026-11-18 服务端改版后
+            # 写死的旧值会让 task_done 报 1003「缺少参数或者参数异常」
+            "Access-Api-Dt": self.api_dt or DEVICE_DT,
             "Access-Wxclient-Type": "wx_app",
             "Access-Api-Signature": api_signature(),
             # 真机 H5 页面请求指纹：ac_sub 涉及现金，风控比 task_done 严
@@ -1025,6 +1071,7 @@ class JinpinghuClient:
                 x, extra = solve_slide(bg_bytes, block_bytes, self.cfg)
             except Exception as e:
                 self.note(f"❌ 滑块识别依赖缺失({type(e).__name__})，需 cv2/numpy、ddddocr 或外部 OCR 服务")
+                self.slide_fail_reason = f"识别依赖缺失({type(e).__name__})"
                 return False
             for xx in [x] + extra:
                 track = [{"x": round(xx * (i + 1) / 8.0, 1), "y": 0, "time": 100} for i in range(8)]
@@ -1051,6 +1098,7 @@ class JinpinghuClient:
                 # 同一 token 只允许校验一次，换下一候选需重新取图
                 break
         self.note("⚠️ 滑块未通过，本轮跳过写操作")
+        self.slide_fail_reason = "多次校验未通过"
         return False
 
     # ---------- 看新闻 / 视频 ----------
@@ -1230,7 +1278,7 @@ class JinpinghuClient:
             self.summary["tasks"] = f"今日已完成 {already}/{len(tasks)}"
             return 0
         if not self.pass_slide():
-            self.summary["tasks"] = "滑块未通过"
+            self.summary["tasks"] = f"滑块未通过（{self.slide_fail_reason or '未知原因'}）"
             return 0
 
         done = 0
@@ -1409,7 +1457,7 @@ class JinpinghuClient:
         self.afs_tokenid = ""
         if not self.pass_slide() or not self.afs_tokenid:
             self.note("⚠️ 抽奖前置滑块凭证未拿到，跳过 ac_sub 以免白扣次数")
-            self.summary["lottery"] = "滑块未通过"
+            self.summary["lottery"] = f"滑块未通过（{self.slide_fail_reason or '未知原因'}）"
             return
 
         # 发奖前二次复核：防止查次数与提交之间绑定状态变化导致白扣。
