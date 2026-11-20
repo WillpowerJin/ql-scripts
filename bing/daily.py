@@ -10,6 +10,11 @@ new Env('必应积分助手');
   读取 cn.bing.com 登录 Cookie，自动完成每日搜索、每日集、每日问答、精选任务，
   领取待领取积分，并展示连续打卡进度与今日未完成项。
 
+  每日搜索说明（2026-11 修复）：必应搜索积分不是请求 /search 就给分，计分依赖
+  SERP 的 reportActivity 上报链（ncheader + reportActivity + rdr 二次跳转上报），
+  每次 +3 分、每日上限 15 分，积分约 1 分钟后到账。详见 do_search()。
+  领取待领取积分，并展示连续打卡进度与今日未完成项。
+
 青龙环境变量（账号，必填，多账号 & / 换行 / # 分隔）：
   BING_COOKIE   完整 Cookie（cn.bing.com，浏览器 F12 → Application → Cookies 全选复制）
   兼容原变量：by（写法相同）
@@ -537,16 +542,75 @@ def get_search_term(used_terms: set[str]) -> str:
     return f"{random.choice(NORMAL_SEARCH_TERMS)} {int(time.time()) % 1000}"
 
 
-def do_search(session: requests.Session, term: str) -> bool:
-    """执行一次搜索（必须带 form=QBRE 才计入每日搜索积分）。"""
+NC_HEADER_IID = "SERP.5047"
+REPORT_IID = "SERP.5057"
+NC_HEADER_BODY = "wb=1;i=1;v=1"
+
+
+def _extract_serp_ig(html: str) -> str:
+    match = re.search(r'IG["\s:=]+([A-Fa-f0-9]{32})', html or "")
+    return match.group(1) if match else ""
+
+
+def _report_search_activity(session: requests.Session, serp_url: str, ig: str,
+                            term: str, referer: str, ver: str) -> bool:
+    """复刻浏览器 SERP 的积分上报链（2026-11 抓包实测）：
+
+    POST /rewardsapp/ncheader?ver=<ver>&IID=SERP.5047&IG=<ig>&ajaxreq=1   body: wb=1;i=1;v=1
+    POST /rewardsapp/reportActivity?IG=<ig>&IID=SERP.5057&q=<term>&form=QBLH&ajaxreq=1
+         body: url=<SERP URL 二次编码>&V=web
+    """
+    headers = {
+        "Referer": referer,
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
     try:
-        r = session.get(
-            f"{BASE}/search",
-            params={"q": term, "form": "QBRE"},
-            headers=get_headers(PC_UA, f"{BASE}/"),
+        session.post(
+            f"{BASE}/rewardsapp/ncheader",
+            params={"ver": ver, "IID": NC_HEADER_IID, "IG": ig, "ajaxreq": "1"},
+            data=NC_HEADER_BODY,
+            headers=headers,
+            timeout=15,
+        )
+        body = "url=" + quote(serp_url, safe="") + "&V=web"
+        r = session.post(
+            f"{BASE}/rewardsapp/reportActivity",
+            params={"IG": ig, "IID": REPORT_IID, "q": term, "form": "QBLH", "ajaxreq": "1"},
+            data=body,
+            headers=headers,
             timeout=15,
         )
         return r.status_code == 200
+    except Exception as exc:
+        debug(f"reportActivity 异常: {exc}")
+        return False
+
+
+def do_search(session: requests.Session, term: str) -> bool:
+    """执行一次会计分的搜索。
+
+    2026-11 实测：仅 GET /search 不计入每日搜索积分（青龙跑 15 次进度仍是 0/15），
+    真实浏览器靠 SERP 的 reportActivity 上报链计分：
+      SERP1 -> POST ncheader -> POST reportActivity
+      -> 客户端 rdr 跳转 SERP2(&rdr=1&rdrig=<IG1>) -> 第二轮 ncheader + reportActivity
+    积分约 1 分钟后到账（每次 3 分，每日上限 15 分）。
+    """
+    try:
+        serp1 = f"{BASE}/search?q={quote(term)}&form=QBLH"
+        r1 = session.get(serp1, headers=get_headers(PC_UA, f"{BASE}/"), timeout=15)
+        if r1.status_code != 200:
+            return False
+        ig1 = _extract_serp_ig(r1.text)
+        if not ig1:
+            return False
+        ver = _extract_nc_ver(r1.text)
+        _report_search_activity(session, serp1, ig1, term, serp1, ver)
+
+        serp2 = f"{serp1}&rdr=1&rdrig={ig1}"
+        r2 = session.get(serp2, headers=get_headers(PC_UA, serp1), timeout=15)
+        ig2 = _extract_serp_ig(r2.text) or ig1
+        ver2 = _extract_nc_ver(r2.text)
+        return _report_search_activity(session, serp2, ig2, term, serp2, ver2)
     except Exception as exc:
         log(f"  搜索异常: {exc}")
         return False
@@ -640,6 +704,12 @@ def get_daily_search_status(html: str) -> tuple[Optional[int], Optional[int]]:
         if 0 < current <= maximum <= 60:
             return current, maximum
     return None, None
+
+
+def _extract_nc_ver(html: str) -> str:
+    """从页面脚本配置里取 rewardsapp 的 ver，取不到用最近抓包值。"""
+    match = re.search(r'"ver"\s*:\s*"(\d{6,})"', html or "")
+    return match.group(1) if match else "76795586"
 
 
 def extract_ig_iid(html: str) -> tuple[str, str]:
@@ -1514,8 +1584,9 @@ def run_account(account: Account, cfg: AppConfig, check_only: bool = False) -> d
 
     need_times = cfg.search_times
     if search_earned is not None and search_limit:
+        # 每次会计分的搜索 +3 分，按积分缺口换算搜索次数
         remaining = max(0, search_limit - search_earned)
-        need_times = min(cfg.search_times, remaining)
+        need_times = min(cfg.search_times, (remaining + 2) // 3)
     search_done = bool(search_earned is not None and search_limit and search_earned >= search_limit)
 
     if search_done:
