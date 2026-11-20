@@ -653,6 +653,85 @@ def _remote_slide(bg_bytes: bytes, block_bytes: bytes, url: str, timeout: int) -
     return float(x), width
 
 
+def _remote_slide_candidates(
+    bg_bytes: bytes, block_bytes: bytes, url: str, timeout: int
+) -> list[float]:
+    """远端 ddddocr 识别的增强版：返回按显示宽度 324 换算后的候选 x 列表。
+
+    新版滑块背景图里有 1 个起始滑块（左下角实心）+ 2 个半透明缺口（一真一假）。
+    ddddocr 直接识别经常锁到起始滑块（返回 50~80 的小值）或噪声，导致整轮全废。
+    装了 Pillow 时：
+      1. 先把左侧起始滑块区域用右缘颜色涂抹掉，再识别（强制对准缺口）；
+      2. 把识别出的缺口也涂掉，再识别一次，拿到第二个缺口候选；
+      3. 过滤明显无效的候选（<85 或 >315，起始块/边界噪声）。
+    没有 Pillow 时退化为原来的单次识别。
+    """
+    try:
+        from PIL import Image  # noqa: F401
+        import io
+    except ImportError:
+        px, width = _remote_slide(bg_bytes, block_bytes, url, timeout)
+        disp = round(px * 324.0 / width, 1)
+        return [disp] if 85 <= disp <= 315 else []
+
+    endpoint = (url or DEFAULT_OCR_URL).rstrip("/") + "/capcode"
+    block_b64 = base64.b64encode(block_bytes).decode()
+
+    def ask(img) -> tuple[float, list]:
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        resp = requests.post(
+            endpoint,
+            json={"backImage": base64.b64encode(buf.getvalue()).decode(),
+                  "slidingImage": block_b64},
+            timeout=timeout,
+        )
+        obj = resp.json() if resp.status_code < 400 else {}
+        x = obj.get("result") if isinstance(obj, dict) else None
+        if x is None:
+            raise RuntimeError("外部 OCR 返回空 result")
+        tgt = obj.get("target") if isinstance(obj, dict) else None
+        return float(x), [float(v) for v in tgt] if isinstance(tgt, list) else []
+
+    img = Image.open(io.BytesIO(bg_bytes)).convert("RGB")
+    width, height = img.size
+    if width < 200:
+        raise RuntimeError("背景图宽度异常")
+    strip = max(60, int(width * 0.20))          # 起始滑块恒在左侧 ~18% 内
+    edge = img.crop((strip, 0, strip + 1, height)).resize((strip, height))
+    masked = img.copy()
+    masked.paste(edge, (0, 0))
+    # 右下角恒有「云点」水印（高对比、形状固定），ddddocr 极易误锁，一并涂掉
+    wm_x, wm_y = int(width * 0.80), int(height * 0.68)
+    wm_fill = img.crop((wm_x - 1, wm_y, wm_x, height)).resize((width - wm_x, height - wm_y))
+    masked.paste(wm_fill, (wm_x, wm_y))
+
+    out: list[float] = []
+    for _ in range(2):
+        try:
+            px, bbox = ask(masked)
+        except Exception:
+            break
+        disp = round(px * 324.0 / width, 1)
+        if 85 <= disp <= 315 and all(abs(disp - o) > 10 for o in out):
+            out.append(disp)
+        if len(bbox) != 4:
+            break
+        # 涂掉已识别缺口（用其右侧像素），让下一次识别另一个缺口
+        x1, y1, x2, y2 = [int(v) for v in bbox]
+        pad = 6
+        x1, y1 = max(0, x1 - pad), max(0, y1 - pad)
+        x2, y2 = min(width - 1, x2 + pad), min(height, y2 + pad)
+        if x2 - x1 < 10 or y2 - y1 < 10:
+            break
+        if x2 + 1 < width:
+            fill = masked.crop((x2 + 1, y1, x2 + 2, y2)).resize((x2 - x1, y2 - y1))
+        else:
+            fill = edge.resize((x2 - x1, y2 - y1))
+        masked.paste(fill, (x1, y1))
+    return out
+
+
 def _ddddocr_slide(bg_bytes: bytes, block_bytes: bytes) -> tuple[float, int]:
     import ddddocr
     import numpy as np
@@ -697,28 +776,159 @@ def _cv2_slide(bg_bytes: bytes, block_bytes: bytes) -> tuple[float, list[float]]
     return (vals[0] if vals else 0.0), vals[1:]
 
 
-def solve_slide(bg_bytes: bytes, block_bytes: bytes, cfg: AppConfig) -> tuple[float, list[float]]:
-    """返回按显示宽度 324 换算后的滑块 x 值及备选候选。
+def _np_slide(bg_bytes: bytes, block_bytes: bytes) -> list[float]:
+    """numpy+Pillow 边缘模板匹配（cv2 方案的轻量替代，Alpine/musl 可装）。
+
+    新版背景图有 1 个起始滑块 + 2 个半透明缺口：按 alpha 形状边缘对 bg 边缘做
+    FFT 归一化互相关（NCC），取前 3 个互不重叠的峰值，返回显示宽度 324 的候选 x。
+    """
+    import numpy as np
+    from PIL import Image
+    import io
+
+    bg = np.asarray(Image.open(io.BytesIO(bg_bytes)).convert("L"), dtype=np.float64)
+    bl = np.asarray(Image.open(io.BytesIO(block_bytes)).convert("RGBA"), dtype=np.float64)
+    alpha = bl[:, :, 3]
+    ys, xs = np.where(alpha > 128)
+    if not len(xs):
+        raise RuntimeError("滑块透明区域为空")
+    x0, y0, x1, y1 = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+
+    def edge_map(a):
+        gy, gx = np.gradient(a)
+        return np.hypot(gx, gy)
+
+    tpl = edge_map(alpha)[y0:y1, x0:x1]
+    if tpl.max() <= 0:
+        raise RuntimeError("滑块边缘为空")
+    tpl = (tpl > tpl.max() * 0.3).astype(np.float64)
+    bge = edge_map(bg)
+    bg_bin = (bge > bge.max() * 0.2).astype(np.float64)
+
+    th, tw = tpl.shape
+    H, W = bg_bin.shape
+    if th >= H or tw >= W:
+        raise RuntimeError("模板尺寸异常")
+    # NCC：corr(tpl,bg) 用 FFT 算；局部均值/方差用积分图（cumsum）算
+    fH = 1 << (H + th - 2).bit_length()
+    fW = 1 << (W + tw - 2).bit_length()
+    corr = np.fft.irfft2(
+        np.fft.rfft2(bg_bin, (fH, fW)) * np.fft.rfft2(tpl[::-1, ::-1], (fH, fW)),
+        (fH, fW),
+    )[th - 1:H, tw - 1:W]
+
+    def integral(m):
+        p = np.zeros((m.shape[0] + 1, m.shape[1] + 1))
+        p[1:, 1:] = m.cumsum(0).cumsum(1)
+        return p
+
+    ones = np.ones_like(tpl)
+    ii1 = integral(bg_bin)
+    ii2 = integral(bg_bin ** 2)
+    s1 = (ii1[th:H + 1, tw:W + 1] - ii1[:-th, tw:W + 1]
+          - ii1[th:H + 1, :-tw] + ii1[:-th, :-tw])
+    s2 = (ii2[th:H + 1, tw:W + 1] - ii2[:-th, tw:W + 1]
+          - ii2[th:H + 1, :-tw] + ii2[:-th, :-tw])
+    n = float(th * tw)
+    mean_bg = s1 / n
+    var_bg = np.maximum(s2 / n - mean_bg ** 2, 1e-9)
+    t_sum = tpl.sum()
+    t_sq = float((tpl ** 2).sum())
+    var_tpl = t_sq / n - (t_sum / n) ** 2
+    denom = np.sqrt(var_bg * var_tpl) * n + 1e-9
+    ncc = (corr - s1 * (t_sum / n)) / denom
+
+    flat = ncc.flatten()
+    idx = np.argsort(flat)[::-1][:400]
+    width = bg.shape[1]
+    peaks: list[tuple[int, int]] = []  # (py, px)
+    for i in idx:
+        y, x = np.unravel_index(i, ncc.shape)
+        y, x = int(y), int(x)
+        if all(abs(x - px) > 12 or abs(y - py) > 12 for py, px in peaks):
+            peaks.append((y, x))
+        if len(peaks) >= 3:
+            break
+
+    # 真假缺口都是同一形状，形状匹配分不出；用「滑块内容与缺口四周的颜色连续性」区分：
+    # 滑块是真缺口处挖出来的原图，真缺口边界内外颜色连续，假缺口边界会跳变。
+    bg_rgb = np.asarray(Image.open(io.BytesIO(bg_bytes)).convert("RGB"), dtype=np.float64)
+
+    def continuity(py: int, px: int) -> float:
+        diffs: list[float] = []
+        bh, bw = tpl.shape
+        # 四边采样：滑块内侧 2px vs 缺口外侧 2px（同向对比）
+        pairs = (
+            (bl[y0 + 1, x0:x1, :3], bg_rgb[max(py - 2, 0), px:px + bw, :], alpha[y0 + 1, x0:x1] > 128),
+            (bl[y1 - 2, x0:x1, :3], bg_rgb[min(py + bh + 1, H - 1), px:px + bw, :], alpha[y1 - 2, x0:x1] > 128),
+            (bl[y0:y1, x0 + 1, :3], bg_rgb[py:py + bh, max(px - 2, 0), :], alpha[y0:y1, x0 + 1] > 128),
+            (bl[y0:y1, x1 - 2, :3], bg_rgb[py:py + bh, min(px + bw + 1, W - 1), :], alpha[y0:y1, x1 - 2] > 128),
+        )
+        for inside, outside, mask in pairs:
+            n_pts = min(len(inside), len(outside))
+            if n_pts < 5:
+                continue
+            d = np.abs(inside[:n_pts] - outside[:n_pts]).mean(axis=1)
+            diffs.append(float(d[:n_pts][mask[:n_pts]].mean()) if mask[:n_pts].any() else float(d[:n_pts].mean()))
+        return float(np.mean(diffs)) if diffs else 999.0
+
+    scored = [(continuity(py, px), px) for py, px in peaks]
+    scored.sort(key=lambda t: t[0])
+    out: list[float] = []
+    for _, px in scored:
+        disp = round((px - x0) * 324.0 / width, 1)
+        if 85 <= disp <= 315 and all(abs(disp - o) > 10 for o in out):
+            out.append(disp)
+    return out
+
+
+def solve_slide_candidates(bg_bytes: bytes, block_bytes: bytes, cfg: AppConfig) -> list[float]:
+    """返回按显示宽度 324 换算后的候选滑块 x 列表（按优先级排序）。
 
     优先级：JPH_OCR=ddddocr / remote 指定的方案，失败则回退 cv2 边缘模板匹配。
+    remote 模式装了 Pillow 时会返回两个缺口候选（见 _remote_slide_candidates）。
     """
     mode = (cfg.ocr or "cv2").lower()
     if mode == "ddddocr":
         try:
             px, width = _ddddocr_slide(bg_bytes, block_bytes)
-            return round(px * 324.0 / width, 1), []
+            disp = round(px * 324.0 / width, 1)
+            if 85 <= disp <= 315:
+                return [disp]
+            return []
         except Exception as e:
-            log(f"⚠️ ddddocr 不可用，回退 cv2: {type(e).__name__}")
+            log(f"⚠️ ddddocr 不可用，回退 numpy: {type(e).__name__}")
 
     if mode in ("remote", "api"):
+        # 优先 numpy 本地形状匹配（只需 numpy+Pillow，Alpine 可装）；
+        # 装了 Pillow 时会先走「遮起始块+水印，远端双候选」，ddddocr 只做兜底
         try:
-            px, width = _remote_slide(bg_bytes, block_bytes, cfg.ocr_url, cfg.timeout)
-            if px:
-                return round(px * 324.0 / width, 1), []
+            cands = _np_slide(bg_bytes, block_bytes)
+            if cands:
+                return cands
+        except ImportError:
+            pass
+        except Exception as e:
+            log(f"⚠️ numpy 识别失败，回退远端 OCR: {type(e).__name__}")
+        try:
+            cands = _remote_slide_candidates(
+                bg_bytes, block_bytes, cfg.ocr_url, cfg.timeout
+            )
+            if cands:
+                return cands
         except Exception as e:
             log(f"⚠️ 外部 OCR 不可用，回退 cv2: {e}")
 
-    return _cv2_slide(bg_bytes, block_bytes)
+    x0, extra = _cv2_slide(bg_bytes, block_bytes)
+    return [v for v in [x0] + extra if 85 <= v <= 315] or [x0]
+
+
+def solve_slide(bg_bytes: bytes, block_bytes: bytes, cfg: AppConfig) -> tuple[float, list[float]]:
+    """兼容旧接口：返回（首选 x, 备选列表）。"""
+    cands = solve_slide_candidates(bg_bytes, block_bytes, cfg)
+    if not cands:
+        return 0.0, []
+    return cands[0], cands[1:]
 
 
 # ---------------------------------------------------------------------------
@@ -1068,35 +1278,38 @@ class JinpinghuClient:
             try:
                 bg_bytes = self.session.get(data["background"], timeout=self.cfg.timeout).content
                 block_bytes = self.session.get(data["block"], timeout=self.cfg.timeout).content
-                x, extra = solve_slide(bg_bytes, block_bytes, self.cfg)
+                candidates = solve_slide_candidates(bg_bytes, block_bytes, self.cfg)
             except Exception as e:
                 self.note(f"❌ 滑块识别依赖缺失({type(e).__name__})，需 cv2/numpy、ddddocr 或外部 OCR 服务")
                 self.slide_fail_reason = f"识别依赖缺失({type(e).__name__})"
                 return False
-            for xx in [x] + extra:
-                track = [{"x": round(xx * (i + 1) / 8.0, 1), "y": 0, "time": 100} for i in range(8)]
-                body = {
-                    "token": token,
-                    "data": aes_encrypt({"x": xx, "width": 324, "track": track}),
-                    "referer": ref,
-                    "type": "1",
-                }
-                rr = self.session.post(YA_BASE + "/api/basemodule/_captcha_check", json=body,
-                                       headers=self.biz_headers(), timeout=self.cfg.timeout)
-                oo = jbody(rr)
-                if (oo.get("data") or {}).get("result") is True:
-                    validate = oo["data"]["token"]
-                    vb = {"validate": validate, "verif_type": 3, "afs_uuid": "", "source": "yundian"}
-                    rv = self.session.post(YA_BASE + "/api/aosbasemodule/intelverifcode_check",
-                                           json=vb, headers=self.biz_headers(), timeout=self.cfg.timeout)
-                    ov = jbody(rv)
-                    tokenid = (ov.get("data") or {}).get("tokenid")
-                    if tokenid:
-                        self.afs_tokenid = tokenid
-                        self.note(f"🧩 滑块自动通过 (x={xx:.1f}, 第{attempt}轮) tokenid={tokenid[:8]}…")
-                        return True
-                # 同一 token 只允许校验一次，换下一候选需重新取图
-                break
+            if not candidates:
+                self.debug("本轮无有效候选 x，重新取图")
+                continue
+            # 同一 token 只允许校验一次：每轮换新图，并轮换候选（新图有真假两个缺口）
+            xx = candidates[(attempt - 1) % len(candidates)]
+            track = [{"x": round(xx * (i + 1) / 8.0, 1), "y": 0, "time": 100} for i in range(8)]
+            body = {
+                "token": token,
+                "data": aes_encrypt({"x": xx, "width": 324, "track": track}),
+                "referer": ref,
+                "type": "1",
+            }
+            rr = self.session.post(YA_BASE + "/api/basemodule/_captcha_check", json=body,
+                                   headers=self.biz_headers(), timeout=self.cfg.timeout)
+            oo = jbody(rr)
+            self.debug(f"captcha_check x={xx}: {rr.text[:150]}")
+            if (oo.get("data") or {}).get("result") is True:
+                validate = oo["data"]["token"]
+                vb = {"validate": validate, "verif_type": 3, "afs_uuid": "", "source": "yundian"}
+                rv = self.session.post(YA_BASE + "/api/aosbasemodule/intelverifcode_check",
+                                       json=vb, headers=self.biz_headers(), timeout=self.cfg.timeout)
+                ov = jbody(rv)
+                tokenid = (ov.get("data") or {}).get("tokenid")
+                if tokenid:
+                    self.afs_tokenid = tokenid
+                    self.note(f"🧩 滑块自动通过 (x={xx:.1f}, 第{attempt}轮) tokenid={tokenid[:8]}…")
+                    return True
         self.note("⚠️ 滑块未通过，本轮跳过写操作")
         self.slide_fail_reason = "多次校验未通过"
         return False

@@ -65,12 +65,14 @@ hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxi
 ```text
 requests
 cryptography
-opencv-python-headless
 numpy
+pillow
 ```
 
-只用外部 OCR 服务（`JPH_OCR=remote`）时，青龙里可不装 cv2 / numpy；
-用 `JPH_OCR=ddddocr` 则装 `ddddocr`。青龙只用环境变量时不必装 PyYAML。
+- **青龙（Alpine/musl）**：`opencv-python-headless` / `ddddocr` 装不了，装 `numpy` + `pillow`
+  即可（有 musllinux 官方 wheel），脚本会用 numpy 本地形状匹配，不再依赖外部 OCR 服务。
+- 桌面 / 本地：默认 cv2 方案需 `opencv-python-headless` + `numpy`。
+- 用 `JPH_OCR=ddddocr` 则装 `ddddocr`。青龙只用环境变量时不必装 PyYAML。
 
 ### 环境变量
 
@@ -130,13 +132,18 @@ PUSHPLUS_TOKEN=...
 
 ## 滑块识别
 
-三种方案，失败会自动回退 cv2：
+新版背景图有 1 个起始滑块 + **2 个同形状半透明缺口（一真一假）**，还有右下角高对比
+「云点」水印，普通 ddddocr 内容匹配极易锁错目标（起始块 / 水印 / 假缺口）。
+脚本按优先级自动选择：
 
-| 方案 | 配置 | 依赖 |
-|------|------|------|
-| cv2 边缘模板匹配（默认） | `JPH_OCR=cv2` | `opencv-python-headless` + `numpy` |
-| 本地 ddddocr | `JPH_OCR=ddddocr` | `ddddocr`（青龙常见） |
-| 外部 ddddocr 服务 | `JPH_OCR=remote` + `JPH_OCR_URL` | 客户端不需要 cv2 |
+| 方案 | 配置 | 依赖 | 说明 |
+|------|------|------|------|
+| numpy 形状匹配 | `JPH_OCR=remote` 时优先（或任何模式回退） | `numpy` + `pillow` | alpha 形状边缘 FFT-NCC 找候选缺口，再用「滑块内容与缺口四周颜色连续性」区分真假缺口 |
+| cv2 边缘模板匹配 | `JPH_OCR=cv2`（默认） | `opencv-python-headless` + `numpy` | 桌面/本地推荐 |
+| 外部 ddddocr 服务 | `JPH_OCR=remote` + `JPH_OCR_URL` | 客户端需 `pillow` | 先涂掉起始滑块和水印再识别，双缺口候选 |
+| 本地 ddddocr | `JPH_OCR=ddddocr` | `ddddocr` | 单候选 |
+
+多轮换新图 + 轮换候选提交（同一 token 只能校验一次）。
 
 外部服务接口（本脚本沿用原「支持外部 ddddocr 版」的协议）：
 

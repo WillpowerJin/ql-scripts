@@ -1,9 +1,12 @@
 requests>=2.31.0
 cryptography>=41.0.0
 
-# 默认 cv2 滑块方案
-opencv-python-headless>=4.8
+# numpy 形状匹配（remote/无 cv2 环境，Alpine 可装）
 numpy>=1.24
+pillow>=10.0
+
+# 默认 cv2 滑块方案（桌面/本地）
+opencv-python-headless>=4.8
 
 # 可选：本地 ddddocr 识别（JPH_OCR=ddddocr）
 # ddddocr
