@@ -33,6 +33,7 @@
 | [ikea](./ikea/) | `daily.py` | 宜家家居：IKEA Token 每日签到（可选 `pull_token.py` 手机提取 Token） | [README](./ikea/README.md) |
 | [sfsy](./sfsy/) | `daily.py` | 顺丰速运：APP/小程序签到 + 积分任务 + 生活特权（积分页 Cookie） | [README](./sfsy/README.md) |
 | [1kf](./1kf/) | `daily.py` | 1KF 会员中心：Cookie 签到 + 可选抽奖 + 积分兑换余额（**一人一号**） | [README](./1kf/README.md) |
+| [hykb](./hykb/) | `daily.py` | 好游快爆：爆米花农场/每日任务/口令/战令/爆友分（scookie 协议，奖励为虚拟爆米花） | [README](./hykb/README.md) |
 
 ### 入口与定时建议
 
@@ -57,6 +58,7 @@
 | `ikea/daily.py` | 每天定时 `20 8 * * *` | `IKEA_TOKEN=JWT`（多账号 `&`）；`pull_token.py` 仅本地用，订阅黑名单排除 |
 | `sfsy/daily.py` | 每天定时 `0 8 * * *` | `sfsyUrl` / `SFSY_COOKIE` / `SFSY_ACCOUNTS`；Cookie 失效需重新抓积分页 |
 | `1kf/daily.py` | 每天定时 `0 8 * * *` | `KF_ACCOUNTS` 或 `KF_COOKIE`（浏览器 Cookie）；抽奖默认关，积分 ≥20 自动兑余额 |
+| `hykb/daily.py` | 每天定时 `10 8 * * *` | `HYKB_ACCOUNTS` 或 `HYKB_COOKIE`（活动 scookie，不是 Cookie 头）；安全模式默认开，超时 ≥30min |
 
 ---
 
@@ -74,7 +76,7 @@
 类型：     公开仓库
 链接：     https://github.com/WillpowerJin/ql-scripts.git
 分支：     main
-白名单：   hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|kugou|huazhu|ikea|sfsy|1kf
+白名单：   hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|kugou|huazhu|ikea|sfsy|1kf|hykb
 黑名单：   pull_token
 扩展名：   py
 定时规则： 30 8 * * *
@@ -89,7 +91,7 @@ pull_token
 **只复制白名单：**
 
 ```text
-hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|kugou|huazhu|ikea|sfsy|1kf
+hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|kugou|huazhu|ikea|sfsy|1kf|hykb
 ```
 
 | 字段 | 说明 |
@@ -115,7 +117,7 @@ https://ghfast.top/https://github.com/WillpowerJin/ql-scripts.git
 在青龙容器内：
 
 ```bash
-ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|kugou|huazhu|ikea|sfsy|1kf" "pull_token" "" "main" "py"
+ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilibili|fanghua|fun|tuiguangbao|aliyun_dev|kuailefeng|dianxin|jinpinghu|tianyi|bing|kugou|huazhu|ikea|sfsy|1kf|hykb" "pull_token" "" "main" "py"
 ```
 
 拉取成功后，脚本管理中应类似：
@@ -141,6 +143,7 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 …/ikea/daily.py             ← 宜家签到
 …/sfsy/daily.py             ← 顺丰速运积分任务
 …/1kf/daily.py              ← 1KF 会员中心签到/兑换
+…/hykb/daily.py             ← 好游快爆爆米花/战令
 ```
 
 不应把 `pull_token.py` 建成任务（黑名单已排除）。
@@ -253,8 +256,13 @@ ql repo https://github.com/WillpowerJin/ql-scripts.git "hifiti|xijiu|quark|bilib
 │   ├── config.example.yaml
 │   ├── requirements.txt
 │   └── README.md
-└── 1kf/
-    ├── daily.py              # 1KF 会员中心签到 + 积分兑换
+├── 1kf/
+│   ├── daily.py              # 1KF 会员中心签到 + 积分兑换
+│   ├── config.example.yaml
+│   ├── requirements.txt
+│   └── README.md
+└── hykb/
+    ├── daily.py              # 好游快爆爆米花/每日任务/战令/爆友分
     ├── config.example.yaml
     ├── requirements.txt
     └── README.md

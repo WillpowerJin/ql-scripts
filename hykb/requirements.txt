@@ -1,0 +1,3 @@
+requests>=2.31.0
+# 本地 config.yaml 配置才需要
+# PyYAML>=6.0.1

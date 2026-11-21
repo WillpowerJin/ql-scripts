@@ -1,0 +1,43 @@
+# 复制为 config.yaml 后填写（不要提交 config.yaml）
+# cp config.example.yaml config.yaml
+
+accounts:
+  # 活动请求里的 scookie 值（不是浏览器 Cookie 头！）
+  # 抓包：好游快爆 App 打开「翻滚吧爆米花」活动，
+  #      抓 huodong3.3839.com/n/hykb/cornfarm/ajax.php 的 form data，
+  #      复制 scookie= 后面那一串（不带 scookie= 前缀）
+  - name: "主号"
+    cookie: "你的 scookie 值"
+
+  # 多账号：不建议（同 IP 多号容易风控）
+
+# 安全模式：1=慢但稳（请求随机 4~12 秒，任务组 15~40 秒）；0=快
+safe: true
+
+# 阶段 A→B 等待秒（小游戏 5 分钟任务需要等），默认 345
+wait_seconds: 345
+
+# 快玩重复领取轮数，默认 0（关）
+farm_rounds: 0
+
+# 答题答案本路径（留空=脚本目录 hykb_answers.json，自动积累）
+answer_bank: ""
+
+# 数美设备指纹（一般不用改，已内置默认值）
+smid: ""
+
+timeout: 20
+inter_account_delay: 10
+
+notify:
+  # Bark：二选一
+  bark_url: ""
+  bark_key: ""
+  bark_server: "https://api.day.app"
+  bark_group: "好游快爆"
+  # bark_sound: "bell"
+  # bark_icon: "https://example.com/icon.png"
+  # bark_level: "active"
+  # Server酱 / 自定义 Webhook
+  serverchan_key: ""
+  webhook_url: ""
