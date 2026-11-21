@@ -85,7 +85,8 @@ requests
 | `by` | 兼容原脚本变量名，写法相同 |
 | `BING_ACCOUNTS` | 可选，JSON 数组：`[{"name":"主号","cookie":"..."}]` |
 | `BING_SEARCH_TIMES` | 每日搜索最多尝试次数，默认 15（最多 20）；实际按积分缺口 ÷3 换算，一般 5 次即满 |
-| `BING_DELAY` | 搜索/任务间隔，默认 `3-8` |
+| `BING_DELAY` | 任务间间隔，默认 `3-8` |
+| `BING_SEARCH_DELAY` | 每日搜索之间的间隔，默认 `100-150` 秒（搜索积分约 1 分钟到账，间隔太短会被丢弃不计分） |
 | `BING_WAIT_SECONDS` | 最终查积分前等待秒，默认 60 |
 | `BING_OFFERS` | 是否做每日精选任务，默认 1 |
 | `BING_CHECKIN` | 是否尝试签到，默认 1 |

@@ -24,6 +24,8 @@ new Env('必应积分助手');
 可选：
   BING_SEARCH_TIMES        每日搜索目标次数（默认 15，最多 20）
   BING_DELAY               搜索/任务间隔秒，格式 "3-8"（默认 3-8）
+  BING_SEARCH_DELAY        每日搜索之间的间隔秒，格式 "100-150"（默认 100-150）
+                           必应搜索积分约 1 分钟到账，间隔太短（如 3-8s）会被丢弃不计分
   BING_WAIT_SECONDS        最终积分查询前等待秒（默认 60）
   BING_OFFERS              是否执行每日精选任务（默认 1）
   BING_CHECKIN             是否尝试每日签到（默认 1）
@@ -94,6 +96,9 @@ DEFAULT_TIMEOUT = 20
 DEFAULT_SEARCH_TIMES = 15
 DEFAULT_DELAY_MIN = 3
 DEFAULT_DELAY_MAX = 8
+# 搜索积分到账约 1 分钟，间隔过短会被必应丢弃不计分（2026-11 实测 3-8s 时 5 次仅记 1 次）
+DEFAULT_SEARCH_DELAY_MIN = 100
+DEFAULT_SEARCH_DELAY_MAX = 150
 DEFAULT_WAIT_SECONDS = 60
 DEFAULT_INTER_ACCOUNT_DELAY = 5
 
@@ -225,6 +230,8 @@ class AppConfig:
     search_times: int = DEFAULT_SEARCH_TIMES
     delay_min: int = DEFAULT_DELAY_MIN
     delay_max: int = DEFAULT_DELAY_MAX
+    search_delay_min: int = DEFAULT_SEARCH_DELAY_MIN
+    search_delay_max: int = DEFAULT_SEARCH_DELAY_MAX
     wait_seconds: int = DEFAULT_WAIT_SECONDS
     offers: bool = True
     checkin: bool = True
@@ -414,6 +421,23 @@ def load_config_yaml(path: Path) -> AppConfig:
         if delay_min > delay_max:
             delay_min, delay_max = delay_max, delay_min
 
+    search_delay_value = str(raw.get("search_delay") or "")
+    if search_delay_value:
+        search_delay_min, search_delay_max = _parse_delay(
+            search_delay_value, (DEFAULT_SEARCH_DELAY_MIN, DEFAULT_SEARCH_DELAY_MAX)
+        )
+    else:
+        raw_smin = raw.get("search_delay_min")
+        raw_smax = raw.get("search_delay_max")
+        search_delay_min = (
+            int(raw_smin) if raw_smin is not None else DEFAULT_SEARCH_DELAY_MIN
+        )
+        search_delay_max = (
+            int(raw_smax) if raw_smax is not None else DEFAULT_SEARCH_DELAY_MAX
+        )
+        if search_delay_min > search_delay_max:
+            search_delay_min, search_delay_max = search_delay_max, search_delay_min
+
     raw_wait = raw.get("wait_seconds")
     wait_seconds = int(raw_wait) if raw_wait is not None else DEFAULT_WAIT_SECONDS
     raw_inter = raw.get("inter_account_delay")
@@ -449,6 +473,8 @@ def load_config_yaml(path: Path) -> AppConfig:
         search_times=max(1, min(int(raw.get("search_times") or DEFAULT_SEARCH_TIMES), 20)),
         delay_min=delay_min,
         delay_max=delay_max,
+        search_delay_min=search_delay_min,
+        search_delay_max=search_delay_max,
         wait_seconds=max(0, min(wait_seconds, 300)),
         offers=bool(raw.get("offers", True)),
         checkin=bool(raw.get("checkin", True)),
@@ -478,6 +504,11 @@ def resolve_config(config_path: Optional[str] = None) -> AppConfig:
     if _env("BING_DELAY"):
         cfg.delay_min, cfg.delay_max = _parse_delay(
             _env("BING_DELAY"), (cfg.delay_min, cfg.delay_max)
+        )
+    if _env("BING_SEARCH_DELAY"):
+        cfg.search_delay_min, cfg.search_delay_max = _parse_delay(
+            _env("BING_SEARCH_DELAY"),
+            (cfg.search_delay_min, cfg.search_delay_max),
         )
     cfg.wait_seconds = _env_int("BING_WAIT_SECONDS", cfg.wait_seconds, 0, 300)
     cfg.offers = _env_bool("BING_OFFERS", cfg.offers)
@@ -1606,7 +1637,8 @@ def run_account(account: Account, cfg: AppConfig, check_only: bool = False) -> d
             ok_count += 1 if ok else 0
             log(f"  搜索[{index + 1}/{need_times}] '{term[:25]}': {'✅' if ok else '❌'}")
             if index < need_times - 1:
-                time.sleep(random.randint(cfg.delay_min, cfg.delay_max))
+                # 搜索积分约 1 分钟到账，间隔太短会被必应丢弃不计分
+                time.sleep(random.randint(cfg.search_delay_min, cfg.search_delay_max))
         result["search_ran"] = need_times
         result["search_ok"] = ok_count
 
