@@ -1000,6 +1000,7 @@ class JinpinghuClient:
         self.summary: dict[str, Any] = {}
         self.afs_tokenid = ""
         self.slide_fail_reason = ""
+        self.failed = ""  # 置位则该账号在汇总/通知中记为失败
         self.slide_referer = REFERER
         self.api_dt = ""  # 服务端签发的 Access-Api-Dt（_auth_dt 接口，写操作校验）
         self.owner_token: Optional[str] = None
@@ -1401,33 +1402,37 @@ class JinpinghuClient:
         今天是 {id:33582, m_id:41603, title:'11月18日 新闻任务'}，明天整个 id 都会换，
         任务内容(_task_list 的 news_id)也每天换 —— 这三处都不能写死。
         选中项同时写入 self.slide_referer，让滑块签名里的 pass_id 跟着当天走。
+
+        主活动每轮结束会轮换新 id（如 11106708→11106716），旧主活动的任务集会
+        「关卡已结束」。找不到当天有效任务集时必须报错中止，不能回退到过期默认值
+        白烧滑块还报「全部顺利」。
         """
         main = self.discover_main_activity()
         now = int(time.time())
-        items: list[dict[str, Any]] = []
-        try:
-            obj, _ = self.get("/api/aoslearnfoot/_optionp_list", {"activity_id": main})
-            items = obj.get("data") or []
-        except Exception as e:
-            self.debug(f"_optionp_list {type(e).__name__}")
-
-        pick: Optional[dict[str, Any]] = None
-        if self.cfg.activity_id:
-            forced = self.cfg.activity_id
-            pick = next((x for x in items if str(x.get("id")) == str(forced)), None)
-            if pick is None:
-                pick = {"id": forced, "m_id": DEFAULT_MODULE_ID, "title": "(JPH_ACTIVITY_ID 指定)"}
+        items = self._fetch_optionp_items(main)
+        pick = self._pick_optionp(items, now)
         if pick is None:
-            for x in items:
-                try:
-                    st, en = int(x.get("start_time") or 0), int(x.get("end_time") or 0)
-                except (TypeError, ValueError):
-                    st = en = 0
-                if st and en and st <= now <= en and str(x.get("state") or "1") != "0":
-                    pick = x
-                    break
-        if pick is None and items:
-            pick = next((x for x in items if str(x.get("state") or "1") != "0"), items[0])
+            # 可能发现到的主活动已失效：强制重查一次（buoy 可能刚换到新轮次）
+            main2 = self.discover_main_activity()
+            items2 = self._fetch_optionp_items(main2)
+            pick2 = self._pick_optionp(items2, now)
+            if pick2 is not None:
+                main, items, pick = main2, items2, pick2
+                self.note(f"🔁 主活动已轮换，改用 {main2}")
+        if pick is None:
+            raise JphError(
+                f"找不到今日有效任务集（主活动={main}，_optionp_list={len(items)} 条），"
+                "活动可能刚轮换或尚未开始，请稍后重试"
+            )
+        try:
+            end_ts = int((pick or {}).get("end_time") or 0)
+        except (TypeError, ValueError):
+            end_ts = 0
+        if end_ts and now > end_ts:
+            raise JphError(
+                f"今日任务集「{(pick or {}).get('title') or (pick or {}).get('id')}」已结束"
+                "（主活动可能已轮换，稍后重试）"
+            )
 
         op_id = str((pick or {}).get("id") or DEFAULT_OPTIONP_ID)
         module_id = str((pick or {}).get("m_id") or DEFAULT_MODULE_ID)
@@ -1448,6 +1453,31 @@ class JinpinghuClient:
             start_ts = 0
         self.not_started = bool(start_ts and now < start_ts)
         return op_id, module_id, title, main
+
+    def _fetch_optionp_items(self, main: str) -> list[dict[str, Any]]:
+        try:
+            obj, _ = self.get("/api/aoslearnfoot/_optionp_list", {"activity_id": main})
+            items = obj.get("data") or []
+            return items if isinstance(items, list) else []
+        except Exception as e:
+            self.debug(f"_optionp_list {type(e).__name__}")
+            return []
+
+    def _pick_optionp(self, items: list[dict[str, Any]], now: int) -> Optional[dict[str, Any]]:
+        if self.cfg.activity_id:
+            forced = self.cfg.activity_id
+            pick = next((x for x in items if str(x.get("id")) == str(forced)), None)
+            if pick is not None:
+                return pick
+            return {"id": forced, "m_id": DEFAULT_MODULE_ID, "title": "(JPH_ACTIVITY_ID 指定)"}
+        for x in items:
+            try:
+                st, en = int(x.get("start_time") or 0), int(x.get("end_time") or 0)
+            except (TypeError, ValueError):
+                st = en = 0
+            if st and en and st <= now <= en and str(x.get("state") or "1") != "0":
+                return x
+        return None
 
     # ---------- 任务 ----------
     def do_tasks(self, dry: bool = False) -> int:
@@ -1492,6 +1522,7 @@ class JinpinghuClient:
             return 0
         if not self.pass_slide():
             self.summary["tasks"] = f"滑块未通过（{self.slide_fail_reason or '未知原因'}）"
+            self.failed = self.summary["tasks"]
             return 0
 
         done = 0
@@ -1527,6 +1558,11 @@ class JinpinghuClient:
                 self.note(f"   ❌ 任务 {task_id} 提交失败: {od.get('msg') or od.get('code')}")
 
         self.summary["tasks"] = f"本次 {done} / 共 {len(tasks)}"
+        pending = len(tasks) - already
+        if done == 0 and pending > 0:
+            # 有待做任务但一个都没成功（如活动集过期「关卡已结束」）：必须记失败，
+            # 否则通知里会误报「全部顺利」
+            self.failed = f"{pending} 个任务全部提交失败"
         return done
 
     # ---------- 抽奖 / 提现手机号 ----------
@@ -1802,13 +1838,23 @@ def run_account(index: int, account: Account, cfg: AppConfig, all_phones: list[s
     )
     try:
         client.run(dry=dry, check=check)
-        result = {
-            "label": account.label,
-            "phone": account.phone,
-            "ok": True,
-            "summary": client.summary,
-            "lines": client.lines,
-        }
+        if client.failed:
+            result = {
+                "label": account.label,
+                "phone": account.phone,
+                "ok": False,
+                "summary": client.summary,
+                "lines": client.lines,
+                "error": client.failed,
+            }
+        else:
+            result = {
+                "label": account.label,
+                "phone": account.phone,
+                "ok": True,
+                "summary": client.summary,
+                "lines": client.lines,
+            }
     except Exception as e:
         client.note(f"❌ 失败: {type(e).__name__}: {str(e)[:160]}")
         if IS_DEBUG:
