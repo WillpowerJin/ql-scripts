@@ -89,6 +89,9 @@ HYKB_COOKIE=你的scookie值
 | `HYKB_TIMEOUT` | 请求超时秒 | `20` |
 | `HYKB_INTER_ACCOUNT_DELAY` | 多账号间隔秒 | `10` |
 
+> 如果爆爆口令返回 `shumei_black`，说明数美指纹和 App 设备不一致：把抓包请求里的
+> `sm_device_id` 值填到 `HYKB_SMID`（同一台手机抓一次即可）。
+
 ### 通知（可选）
 
 与仓库其它脚本共用：

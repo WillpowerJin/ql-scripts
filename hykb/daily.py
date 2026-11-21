@@ -395,7 +395,7 @@ class HykbClient:
         self.season_got = 0
         self.season_level = None
         self.season_score = None
-        self.byf = None
+        self.byf_value = None
         self.byf_level = None
         self.byf_today = None
 
@@ -768,7 +768,7 @@ class HykbClient:
 
             c = (self.bdt("login").get("config") or {})
             if c:
-                self.byf = c.get("byf")
+                self.byf_value = c.get("byf")
                 self.byf_level = c.get("level")
                 self.byf_today = f"{c.get('daily_byf_earned')}/{c.get('daily_byf_total')}"
                 log(f"爆友分 {c.get('byf')}（今日 {c.get('daily_byf_earned')}/"
@@ -1021,7 +1021,7 @@ def run_account(index: int, account: Account, cfg: AppConfig,
         result["need"] = need
         result["season_level"] = client.season_level
         result["season_score"] = client.season_score
-        result["byf"] = client.byf
+        result["byf"] = client.byf_value
         result["byf_level"] = client.byf_level
         result["byf_today"] = client.byf_today
         result["steps"].append("phase_b:ok")
